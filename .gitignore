@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# FastAPI
+backend_api/.env
+
+# React
+frontend-dashboard/.env
+
+# Node
+node_modules/
+frontend-dashboard/node_modules/
+
+# VSCode
+.vscode/
+
+# Logs
+*.log
+
+# Database
+*.db
+*.sqlite3
+
+# Build
+dist/
+build/
+
+# AI Models
+network_agent/model/
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.gguf
+*.bin
+*.safetensors
+
+# OS
+.DS_Store
+Thumbs.db
