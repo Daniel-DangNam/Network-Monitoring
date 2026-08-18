@@ -1,47 +1,12 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-
-# Virtual Environment
+# Môi trường ảo và bộ nhớ tạm
 venv/
-.venv/
-env/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
 
-# FastAPI
-backend_api/.env
+# Bỏ qua các file gói tin rác (nếu còn sót)
+*.pcap
+*.pcapng
 
-# React
-frontend-dashboard/.env
-
-# Node
-node_modules/
-frontend-dashboard/node_modules/
-
-# VSCode
-.vscode/
-
-# Logs
-*.log
-
-# Database
-*.db
-*.sqlite3
-
-# Build
-dist/
-build/
-
-# AI Models
-network_agent/model/
-*.pt
-*.pth
-*.ckpt
-*.onnx
-*.gguf
-*.bin
-*.safetensors
-
-# OS
-.DS_Store
-Thumbs.db
+# (Tùy chọn) Bỏ qua file model .pth nếu dung lượng nó lớn hơn 100MB
+# model_final_Application_Label.pth

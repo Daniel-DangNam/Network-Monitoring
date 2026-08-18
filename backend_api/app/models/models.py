@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
 from datetime import datetime
-from database import Base
+from app.core.database import Base
 
 class ClassificationHistory(Base):
     __tablename__ = "classification_history"

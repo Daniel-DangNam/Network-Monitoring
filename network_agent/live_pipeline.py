@@ -7,8 +7,8 @@ import logging
 import threading
 import queue
 import requests
-import signal # BỔ SUNG: Bắt tín hiệu từ Backend
-import sys    # BỔ SUNG: Để thoát tiến trình an toàn
+import signal
+import sys
 from datetime import datetime
 from collections import Counter
 from scapy.utils import PcapReader
@@ -26,13 +26,10 @@ print_lock = threading.Lock()
 ## ========================================================
 # TẠO FOLDER LƯU TRỮ DỮ LIỆU ĐÁNH GIÁ (DATASETS)
 # ========================================================
-DATASET_DIR = "csv" # Đổi tên thư mục thành 'csv'
+DATASET_DIR = "csv"
 if not os.path.exists(DATASET_DIR):
     os.makedirs(DATASET_DIR)
     
-# THÊM GIỜ-PHÚT-GIÂY VÀO TÊN FILE
-# Vì mỗi lần bấm "KÍCH HOẠT LẮNG NGHE" trên Web, Backend sẽ gọi lại script này,
-# nên thời gian sẽ được làm mới, tạo ra một file CSV độc lập cho mỗi phiên.
 current_session_time = datetime.now().strftime("%Y%m%d_%H%M%S")
 CSV_OUT_PATH = os.path.join(DATASET_DIR, f"network_test_dataset_{current_session_time}.csv")
 
@@ -72,7 +69,6 @@ def shutdown_handler(signum, frame):
     safe_print(f"\n[HỆ THỐNG] Đã nhận lệnh tắt ({signame}). Đang dọn dẹp các luồng...")
     is_running = False
     
-# Gắn cờ bắt tín hiệu. SIGINT = Bấm Ctrl+C. SIGTERM = Lệnh tắt ngầm từ Web (Backend).
 signal.signal(signal.SIGINT, shutdown_handler)
 signal.signal(signal.SIGTERM, shutdown_handler)
 
@@ -84,7 +80,6 @@ def capture_traffic_loop(duration=10):
             safe_print(f"\n[Luồng Thu Thập] Đang nghe lén mạng trong {duration} giây...")
             packets = sniff(timeout=duration, filter="tcp or udp")
             
-            # Kiểm tra lại is_running vì trong lúc sniff có thể đã bị ngắt
             if not is_running: break 
             
             pkt_count = len(packets)
@@ -203,37 +198,51 @@ def analyze_with_ai(model, csv_filename):
         return "Error"
 
 def extract_domains(pcap_filename):
-    domains = set() 
+    tls_domains = set()
+    dns_domains = []
+    
+    # Bộ lọc nâng cao: Loại bỏ hoàn toàn các domain chạy nền của Ubuntu, Firefox, và quảng cáo Google
     BLACKLIST_KEYWORDS = [
         'doubleclick', 'syndication', 'analytics', 'clarity.ms', 'adsafe', 
         'adnxs.com', 'criteo.com', 'gstatic', 'cloudflareinsights', 
-        'tracking', 'telemetry', 'cdn', 'ggpht.com', 'adtraffic', 'adster'
+        'tracking', 'telemetry', 'cdn', 'ggpht.com', 'adtraffic', 'adster',
+        'merino', 'fastly', 'mozilla', 'ubuntu.com', 'ntp.org', 'canonical',
+        'googleapis', '1e100.net', 'metrics'
     ]
 
     try:
         with PcapReader(pcap_filename) as pcap_reader:
             for pkt in pcap_reader:
-                domain_name = None
-                if pkt.haslayer(DNSQR):
-                    domain_name = pkt[DNSQR].qname.decode('utf-8').strip('.')
-                elif pkt.haslayer(TLS_Ext_ServerName):
+                # 1. Ưu tiên cao nhất: Lấy tên miền thực tế từ gói tin bắt tay HTTPS (TLS SNI)
+                if pkt.haslayer(TLS_Ext_ServerName):
                     try:
                         server_names = pkt[TLS_Ext_ServerName].servernames
                         if server_names: 
-                            domain_name = server_names[0].servername.decode('utf-8')
+                            sni_name = server_names[0].servername.decode('utf-8').lower()
+                            if not any(junk in sni_name for junk in BLACKLIST_KEYWORDS):
+                                tls_domains.add(sni_name)
                     except: pass
                 
-                if domain_name:
-                    domain_name = domain_name.lower()
-                    if domain_name.endswith('.local') or domain_name.endswith('.arpa'):
-                        continue
-                    
-                    is_junk = any(junk in domain_name for junk in BLACKLIST_KEYWORDS)
-                    if not is_junk:
-                        domains.add(domain_name)
+                # 2. Phương án dự phòng: Lấy từ các gói truy vấn DNS
+                elif pkt.haslayer(DNSQR):
+                    try:
+                        qname = pkt[DNSQR].qname.decode('utf-8').strip('.').lower()
+                        if not qname.endswith('.local') and not qname.endswith('.arpa'):
+                            if not any(junk in qname for junk in BLACKLIST_KEYWORDS):
+                                dns_domains.append(qname)
+                    except: pass
     except: pass
     
-    return list(domains)
+    # Trả về kết quả:
+    if tls_domains:
+        # Nếu bắt được SNI thực tế, ưu tiên trả về SNI (đây thường là domain người dùng đang tương tác thực sự)
+        return list(tls_domains)
+    elif dns_domains:
+        # Nếu không có HTTPS, lấy tối đa 2 domain DNS được hỏi nhiều nhất trong cửa sổ 10s
+        counts = Counter(dns_domains)
+        return [domain for domain, _ in counts.most_common(2)]
+        
+    return []
 
 def main():
     global is_running
@@ -249,7 +258,6 @@ def main():
     capture_thread.start()
     process_thread.start()
     
-    # Vòng lặp chính chờ đợi cho đến khi is_running = False (Do Signal đổi)
     while is_running: 
         time.sleep(1)
         
