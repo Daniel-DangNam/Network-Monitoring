@@ -3,11 +3,47 @@ import torch.nn as nn
 import torchvision.models as models
 import numpy as np
 
-# Danh sách 11 nhãn theo đúng thứ tự (0-10)
+# Danh sách 11 nhãn theo đúng thứ tự huấn luyện (0-10)
 CLASS_NAMES = [
     'Streaming', 'VPN-VoIP', 'VPN-chat', 'VPN-email', 'VPN-file_transfer',
     'VPN-p2p', 'VPN-streaming', 'VoIP', 'chat', 'email', 'file_transfer'
 ]
+
+# --- BỘ TỪ ĐIỂN RULE-BASED THỰC CHIẾN (MỞ RỘNG) ---
+SNI_RULES_ADVANCED = {
+    # 1. EMAIL (Giữ trọn vẹn từ Test 3)
+    'mail.google.com': 'email',
+    'mail-attachment.googleusercontent.com': 'email',
+    'inbox.google.com': 'email',
+    'outlook.live.com': 'email',
+    'outlook.office.com': 'email',
+    'outlook.office365.com': 'email',
+    'smtp': 'email',
+    'imap': 'email',
+    'pop3': 'email',
+
+    # 2. STREAMING (Giữ trọn vẹn từ Test 1)
+    'googlevideo.com': 'Streaming',
+    'youtube.com': 'Streaming',
+    'ytimg.com': 'Streaming',
+    'video.xx.fbcdn.net': 'Streaming',
+    'nflxvideo.net': 'Streaming',
+    'netflix.com': 'Streaming',
+    'vimeocdn.com': 'Streaming',
+    'ttvnw.net': 'Streaming',
+    
+    # 3. FILE TRANSFER (Giữ trọn vẹn từ Test 2)
+    'drive.google.com': 'file_transfer',
+    'docs.google.com': 'file_transfer',
+    'drive-thirdparty.googleusercontent.com': 'file_transfer',
+    'clients6.google.com': 'file_transfer',
+    'dropbox.com': 'file_transfer',
+    'onedrive.live.com': 'file_transfer',
+    'fbsbx.com': 'file_transfer',
+    'sharepoint.com': 'file_transfer',
+    'mediafire.com': 'file_transfer',
+    'mega.nz': 'file_transfer',
+}
 
 def load_ai_model(model_path):
     print("[AI] Đang nạp cấu trúc ResNet-18 tùy chỉnh...")
@@ -34,20 +70,18 @@ def load_ai_model(model_path):
     return model
 
 def features_to_tensor(features_list):
-    # CHỈNH SỬA Ở ĐÂY: Tự động đệm số 0 cho đủ 81 phần tử (9x9)
+    # Tự động đệm số 0 cho đủ 81 phần tử (9x9)
     features_81 = list(features_list)
     
     if len(features_81) < 81:
-        # Nếu thiếu (ví dụ có 78), đệm thêm các số 0 vào cuối
         padding_needed = 81 - len(features_81)
         features_81.extend([0.0] * padding_needed)
     elif len(features_81) > 81:
-        # Nếu thừa, chỉ lấy đúng 81 cái đầu tiên
         features_81 = features_81[:81]
     
     arr = np.array(features_81, dtype=np.float32)
     
-    # Chuẩn hóa Min-Max
+    # Chuẩn hóa Min-Max cục bộ
     arr_min, arr_max = np.min(arr), np.max(arr)
     if arr_max - arr_min != 0:
         arr_normalized = (arr - arr_min) / (arr_max - arr_min)
@@ -63,6 +97,55 @@ def features_to_tensor(features_list):
     return tensor_input
 
 def predict(model, tensor_input):
+    with torch.no_grad():
+        output = model(tensor_input)
+        idx = torch.argmax(output, dim=1).item()
+        return CLASS_NAMES[idx]
+
+def hybrid_predict_advanced(model, tensor_input, sni_domain, protocol):
+    """
+    Hệ thống phân loại Lai (Hybrid): Giao thức (Protocol) + Tên miền (SNI) + Học sâu (AI).
+    """
+    domain_lower = str(sni_domain).lower()
+    
+    # BƯỚC 1: Xử lý ưu tiên cho các Ứng dụng Thoại / Họp / Nhắn tin theo Giao thức
+    chat_voip_apps = [
+        'zalo', 'zadn.vn', 'zalocdn', 'telegram', 't.me', 'messenger',
+        'meet.google', 'hangouts', 'teams', 'discord', 'zoom', 'skype', 'webrtc'
+    ]
+    
+    if any(app in domain_lower for app in chat_voip_apps):
+        if protocol == 17:  # UDP -> Truyền tải âm thanh/video thoại thời gian thực
+            return "VoIP"
+        else:               # TCP -> Nhắn tin văn bản, kết nối báo hiệu
+            return "chat"
+            
+    if 'tiktok' in domain_lower:
+        if protocol == 17:
+            return "Streaming"
+        else:
+            return "chat"
+
+    # BƯỚC 2: Xử lý dải máy chủ động của Google (Đảm bảo Test 2 và Test 3)
+    if '.googleusercontent.com' in domain_lower:
+        subdomain = domain_lower.split('.googleusercontent.com')[0]
+        # Nếu có tiền tố ci (máy chủ ảnh/icon của mail) hoặc mail-attachment -> Email
+        if subdomain.startswith('ci') or 'mail' in subdomain:
+            return 'email'
+        # Nếu là máy chủ download Drive/Docs/Storage -> File Transfer
+        elif subdomain.startswith('lh') or 'drive' in subdomain:
+            return 'file_transfer'
+
+    # BƯỚC 3: Quét qua bộ từ điển CDN / Subdomain cố định
+    for key, label in SNI_RULES_ADVANCED.items():
+        if key in domain_lower:
+            return label
+
+    # BƯỚC 4: Bổ sung cho VoIP khi không bắt được tên miền (Luồng UDP âm thanh cuộc gọi Meet/Zalo call)
+    if protocol == 17:
+        return "VoIP"
+
+    # BƯỚC 5: Giao cho AI phán đoán (Chỉ các luồng TCP còn lại)
     with torch.no_grad():
         output = model(tensor_input)
         idx = torch.argmax(output, dim=1).item()

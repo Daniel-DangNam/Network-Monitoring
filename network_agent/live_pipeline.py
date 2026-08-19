@@ -16,12 +16,15 @@ from scapy.utils import PcapReader
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 from scapy.all import sniff, wrpcap, DNSQR
 from scapy.layers.tls.all import TLS_Ext_ServerName 
-from ai_core import load_ai_model, features_to_tensor, predict
+from ai_core import load_ai_model, features_to_tensor, hybrid_predict_advanced
 from cicflowmeter.sniffer import create_sniffer
 
 pcap_queue = queue.Queue()
 is_running = True
 print_lock = threading.Lock() 
+
+# BIẾN TOÀN CỤC DUY TRÌ TRẠNG THÁI TÊN MIỀN
+last_active_domain = "Unknown"
 
 ## ========================================================
 # TẠO FOLDER LƯU TRỮ DỮ LIỆU ĐÁNH GIÁ (DATASETS)
@@ -61,7 +64,7 @@ def safe_print(message):
         print(message)
 
 # ========================================================
-# HÀM XỬ LÝ TÍN HIỆU TẮT AN TOÀN TỪ BACKEND HOẶC BÀN PHÍM
+# HÀM XỬ LÝ TÍN HIỆU TẮT AN TOÀN
 # ========================================================
 def shutdown_handler(signum, frame):
     global is_running
@@ -72,8 +75,7 @@ def shutdown_handler(signum, frame):
 signal.signal(signal.SIGINT, shutdown_handler)
 signal.signal(signal.SIGTERM, shutdown_handler)
 
-
-def capture_traffic_loop(duration=10):
+def capture_traffic_loop(duration=30):
     global is_running
     while is_running:
         try:
@@ -96,10 +98,10 @@ def capture_traffic_loop(duration=10):
             if is_running: safe_print(f"Lỗi ở luồng bắt gói tin: {e}")
 
 def process_data_loop(model):
-    global is_running
+    global is_running, last_active_domain
     while is_running:
         try:
-            queue_item = pcap_queue.get(timeout=3)
+            queue_item = pcap_queue.get(timeout=5)
             pcap_filename, pkt_count = queue_item
             csv_filename = pcap_filename.replace('.pcap', '.csv')
             
@@ -124,14 +126,17 @@ def process_data_loop(model):
                 cic_success = False
             
             if cic_success and os.path.exists(abs_csv_out):
-                prediction_result = analyze_with_ai(model, abs_csv_out)
                 visited_websites = extract_domains(abs_pcap)
+                prediction_result = analyze_with_ai(model, abs_csv_out, visited_websites)
+                
+                # Đồng bộ tên miền hiển thị cho Web/WebSocket
+                display_websites = visited_websites if visited_websites else ([last_active_domain] if last_active_domain != "Unknown" else [])
                 
                 log_data = {
                     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "ai_prediction": prediction_result,
                     "packet_count": pkt_count,
-                    "websites": visited_websites
+                    "websites": display_websites
                 }
                 
                 safe_print("\n" + "="*60)
@@ -154,7 +159,8 @@ def process_data_loop(model):
         except Exception as e:
             if is_running: safe_print(f"-> [Cảnh báo Luồng Xử Lý] Xảy ra lỗi ngoài ý muốn: {e}")
 
-def analyze_with_ai(model, csv_filename):
+def analyze_with_ai(model, csv_filename, visited_websites):
+    global last_active_domain
     try:
         df = pd.read_csv(csv_filename)
         df = df.replace([np.inf, -np.inf], np.nan).dropna()
@@ -171,10 +177,22 @@ def analyze_with_ai(model, csv_filename):
         predictions = []
         valid_features = []
         
+        # Duy trì trạng thái tên miền liên tục
+        if visited_websites and visited_websites[0] != "Unknown":
+            primary_domain = visited_websites[0]
+            last_active_domain = primary_domain
+        else:
+            primary_domain = last_active_domain
+        
         for index, row in df_numeric.iterrows():
             try:
+                protocol_val = 6
+                if 'protocol' in row: protocol_val = int(row['protocol'])
+                elif 'Protocol' in row: protocol_val = int(row['Protocol'])
+                
                 tensor_data = features_to_tensor(row.tolist())
-                result = predict(model, tensor_data)
+                result = hybrid_predict_advanced(model, tensor_data, primary_domain, protocol_val)
+                
                 predictions.append(result)
                 valid_features.append(row.tolist())
             except Exception: continue
@@ -182,6 +200,7 @@ def analyze_with_ai(model, csv_filename):
         if not predictions: return "Unknown"
         
         export_df = pd.DataFrame(valid_features, columns=df_ordered.columns)
+        export_df['Destination / Websites'] = primary_domain
         export_df['AI_Prediction'] = predictions
         
         write_header = not os.path.exists(CSV_OUT_PATH)
@@ -198,49 +217,88 @@ def analyze_with_ai(model, csv_filename):
         return "Error"
 
 def extract_domains(pcap_filename):
-    tls_domains = set()
+    tls_domains = []
     dns_domains = []
     
-    # Bộ lọc nâng cao: Loại bỏ hoàn toàn các domain chạy nền của Ubuntu, Firefox, và quảng cáo Google
+    # LỌC RÁC: Chặn quảng cáo, telemetry, tìm kiếm và broadcast nội bộ máy
+    # Bỏ chữ 'cdn' chung chung để không vô tình chặn 'zalocdn.net'
     BLACKLIST_KEYWORDS = [
         'doubleclick', 'syndication', 'analytics', 'clarity.ms', 'adsafe', 
-        'adnxs.com', 'criteo.com', 'gstatic', 'cloudflareinsights', 
-        'tracking', 'telemetry', 'cdn', 'ggpht.com', 'adtraffic', 'adster',
-        'merino', 'fastly', 'mozilla', 'ubuntu.com', 'ntp.org', 'canonical',
-        'googleapis', '1e100.net', 'metrics'
+        'adnxs', 'criteo', 'gstatic', 'cloudflareinsights', 'tracking', 
+        'telemetry', 'ggpht.com', 'adtraffic', 'adster', 'merino', 
+        'fastly', 'mozilla', 'ubuntu.com', 'ntp.org', 'canonical', 
+        'googleapis', '1e100.net', 'metrics', 'windowsupdate', 'microsoft',
+        'bing', 'yandex', 'brave.com', 'pixel', 'ads', 'marketing', 
+        'logger', 'tracker', 'optimizely', 'scorecardresearch', 'taboola', 
+        'outbrain', 'amazon-adsystem', 'googletagmanager', 'cloudflareclient',
+        'time.cloudflare', 'exp-tas.com', 'google.com.vn', 'google.com',
+        'azathoth', 'local', 'lan', 'wpad', 'vscode', 'vscode-cdn'
+    ]
+
+    # Bổ sung toàn bộ dải domain Zalo, Telegram, Meet, Teams
+    PRIORITY_KEYWORDS = [
+        # VoIP & Video Call
+        'meet.google', 'teams', 'discord', 'zoom', 'skype', 'webrtc',
+        
+        # Chat & Nhắn tin
+        'chat.zalo', 'zalo.me', 'zadn.vn', 'zalocdn', 'zaloapp', 'telegram', 't.me', 'messenger',
+        
+        # Email
+        'mail-attachment', 'mail.google', 'ci3.googleusercontent', 'inbox.google',
+        'outlook', 'smtp', 'imap', 'pop3',
+        
+        # File Transfer
+        'drive.google', 'docs.google', 'drive-thirdparty', 'lh3.googleusercontent',
+        'clients6.google', 'dropbox', 'onedrive', 'fbsbx', 'sharepoint', 
+        'mediafire', 'mega.nz',
+        
+        # Streaming
+        'youtube', 'googlevideo', 'ytimg', 'video.xx.fbcdn', 
+        'nflxvideo', 'netflix', 'vimeocdn', 'ttvnw',
+        
+        # VPN
+        'vpn', 'tunnel', 'openvpn', 'wireguard'
     ]
 
     try:
         with PcapReader(pcap_filename) as pcap_reader:
             for pkt in pcap_reader:
-                # 1. Ưu tiên cao nhất: Lấy tên miền thực tế từ gói tin bắt tay HTTPS (TLS SNI)
                 if pkt.haslayer(TLS_Ext_ServerName):
                     try:
                         server_names = pkt[TLS_Ext_ServerName].servernames
                         if server_names: 
                             sni_name = server_names[0].servername.decode('utf-8').lower()
-                            if not any(junk in sni_name for junk in BLACKLIST_KEYWORDS):
-                                tls_domains.add(sni_name)
+                            # Kiểm tra domain hợp lệ và không nằm trong blacklist
+                            if not any(junk in sni_name for junk in BLACKLIST_KEYWORDS) and '.' in sni_name:
+                                tls_domains.append(sni_name)
                     except: pass
                 
-                # 2. Phương án dự phòng: Lấy từ các gói truy vấn DNS
                 elif pkt.haslayer(DNSQR):
                     try:
                         qname = pkt[DNSQR].qname.decode('utf-8').strip('.').lower()
-                        if not qname.endswith('.local') and not qname.endswith('.arpa'):
+                        if not qname.endswith('.local') and not qname.endswith('.arpa') and '.' in qname:
                             if not any(junk in qname for junk in BLACKLIST_KEYWORDS):
                                 dns_domains.append(qname)
                     except: pass
     except: pass
     
-    # Trả về kết quả:
-    if tls_domains:
-        # Nếu bắt được SNI thực tế, ưu tiên trả về SNI (đây thường là domain người dùng đang tương tác thực sự)
-        return list(tls_domains)
-    elif dns_domains:
-        # Nếu không có HTTPS, lấy tối đa 2 domain DNS được hỏi nhiều nhất trong cửa sổ 10s
-        counts = Counter(dns_domains)
-        return [domain for domain, _ in counts.most_common(2)]
+    def get_best_domain(domain_list):
+        if not domain_list: return None
+        counts = Counter(domain_list)
+        
+        for domain, _ in counts.most_common():
+            if any(p in domain for p in PRIORITY_KEYWORDS):
+                return domain
+                
+        return counts.most_common(1)[0][0]
+
+    best_tls = get_best_domain(tls_domains)
+    if best_tls:
+        return [best_tls]
+        
+    best_dns = get_best_domain(dns_domains)
+    if best_dns:
+        return [best_dns]
         
     return []
 
@@ -250,7 +308,7 @@ def main():
     print("🚀 KHỞI ĐỘNG HỆ THỐNG GIÁM SÁT MẠNG TỰ ĐỘNG (FINAL VERSION) 🚀")
     model = load_ai_model('model_final_Application_Label.pth')
     
-    capture_thread = threading.Thread(target=capture_traffic_loop, args=(10,))
+    capture_thread = threading.Thread(target=capture_traffic_loop, args=(30,))
     capture_thread.daemon = True 
     process_thread = threading.Thread(target=process_data_loop, args=(model,))
     process_thread.daemon = True
