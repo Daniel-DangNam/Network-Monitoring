@@ -80,7 +80,7 @@ def capture_traffic_loop(duration=30):
     while is_running:
         try:
             safe_print(f"\n[Luồng Thu Thập] Đang nghe lén mạng trong {duration} giây...")
-            # Thêm count=3000 để giới hạn tối đa 3000 gói/chu kỳ (đủ trích xuất đặc trưng mà CIC không bị nghẽn)
+            # Giữ count=3000 để bọc lót chống tràn RAM khi demo
             packets = sniff(timeout=duration, filter="tcp or udp", count=3000)
             
             if not is_running: break 
@@ -191,12 +191,13 @@ def analyze_with_ai(model, csv_filename, visited_websites):
                 if 'protocol' in row: protocol_val = int(row['protocol'])
                 elif 'Protocol' in row: protocol_val = int(row['Protocol'])
                 
-                # Trích xuất dst_port nếu có
-                dst_port_val = row.get('dst_port', 0)
-                if 'Dst Port' in row: dst_port_val = row['Dst Port']
-
+                # CHÚ Ý: Bổ sung lấy dst_port để đồng bộ với ai_core.py mới
+                dst_port_val = 0
+                if 'dst_port' in row: dst_port_val = int(row['dst_port'])
+                elif 'Dst Port' in row: dst_port_val = int(row['Dst Port'])
+                
                 tensor_data = features_to_tensor(row.tolist())
-                # Bổ sung dst_port_val vào tham số truyền cho hybrid_predict_advanced
+                # Truyền thêm dst_port_val vào hàm hybrid_predict_advanced
                 result = hybrid_predict_advanced(model, tensor_data, primary_domain, protocol_val, dst_port_val)
                 
                 predictions.append(result)
@@ -226,8 +227,7 @@ def extract_domains(pcap_filename):
     tls_domains = []
     dns_domains = []
     
-    # LỌC RÁC: Chặn quảng cáo, telemetry, tìm kiếm và broadcast nội bộ máy
-    # Bỏ chữ 'cdn' chung chung để không vô tình chặn 'zalocdn.net'
+    # LỌC RÁC
     BLACKLIST_KEYWORDS = [
         'doubleclick', 'syndication', 'analytics', 'clarity.ms', 'adsafe', 
         'adnxs', 'criteo', 'gstatic', 'cloudflareinsights', 'tracking', 
@@ -241,21 +241,21 @@ def extract_domains(pcap_filename):
         'azathoth', 'local', 'lan', 'wpad', 'vscode', 'vscode-cdn'
     ]
 
-    # Bổ sung toàn bộ dải domain Zalo, Telegram, Meet, Teams
+    # Bổ sung ưu tiên các máy chủ Azure (Meet) và các sub-domain ảnh/avatar của Gmail
     PRIORITY_KEYWORDS = [
         # VoIP & Video Call
-        'meet.google', 'teams', 'discord', 'zoom', 'skype', 'webrtc',
+        'meet.google', 'teams', 'discord', 'zoom', 'skype', 'webrtc', 'cloudapp.azure.com',
         
         # Chat & Nhắn tin
         'chat.zalo', 'zalo.me', 'zadn.vn', 'zalocdn', 'zaloapp', 'telegram', 't.me', 'messenger',
         
         # Email
-        'mail-attachment', 'mail.google', 'ci3.googleusercontent', 'inbox.google',
+        'mail-attachment', 'mail.google', 'ci3.googleusercontent', 'lh3.googleusercontent', 
+        'lh4.googleusercontent', 'lh5.googleusercontent', 'lh6.googleusercontent', 'inbox.google', 'gmail.com',
         'outlook', 'smtp', 'imap', 'pop3',
         
         # File Transfer
-        'drive.google', 'docs.google', 'drive-thirdparty', 'lh3.googleusercontent',
-        'clients6.google', 'dropbox', 'onedrive', 'fbsbx', 'sharepoint', 
+        'drive.google', 'docs.google', 'drive-thirdparty', 'clients6.google', 'dropbox', 'onedrive', 'fbsbx', 'sharepoint', 
         'mediafire', 'mega.nz',
         
         # Streaming
@@ -274,7 +274,6 @@ def extract_domains(pcap_filename):
                         server_names = pkt[TLS_Ext_ServerName].servernames
                         if server_names: 
                             sni_name = server_names[0].servername.decode('utf-8').lower()
-                            # Kiểm tra domain hợp lệ và không nằm trong blacklist
                             if not any(junk in sni_name for junk in BLACKLIST_KEYWORDS) and '.' in sni_name:
                                 tls_domains.append(sni_name)
                     except: pass
