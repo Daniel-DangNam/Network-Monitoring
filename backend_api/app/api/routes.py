@@ -6,12 +6,15 @@ from typing import List
 
 import subprocess
 import os
+import csv
+import io
 import signal
 
 # Import từ các module trong kiến trúc mới
 from app.core import database, auth
 from app.models import models
 from app.utils.socket_manager import manager
+from fastapi.responses import StreamingResponse
 
 router = APIRouter()
 
@@ -139,3 +142,38 @@ async def websocket_endpoint(websocket: WebSocket):
             print(f"Nhận được tín hiệu từ Client: {data}")
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+@router.get("/api/v1/export/csv")
+def export_history_csv(
+    db: Session = Depends(database.get_db), 
+    token: str = Depends(auth.oauth2_scheme)
+):
+    # Truy vấn toàn bộ lịch sử phân loại từ cơ sở dữ liệu
+    records = db.query(models.ClassificationHistory).order_by(models.ClassificationHistory.id.desc()).all()
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Ghi phần tiêu đề cột (Header) tương ứng với bảng dữ liệu
+    writer.writerow(["ID", "Timestamp", "Packet Count", "AI Prediction Label", "Destination / Websites"])
+    
+    # Ghi từng dòng dữ liệu thực tế
+    for record in records:
+        # Xử lý chuỗi mảng websites nếu được lưu dạng JSON/List trong database
+        websites_str = ", ".join(record.websites) if isinstance(record.websites, list) else str(record.websites or "")
+        writer.writerow([
+            record.id,
+            str(record.log_timestamp),
+            record.packet_count,
+            record.ai_prediction,
+            websites_str
+        ])
+    
+    output.seek(0)
+    
+    # Trả về dưới dạng một luồng file CSV để trình duyệt tự động tải xuống
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=network_traffic_report.csv"}
+    )

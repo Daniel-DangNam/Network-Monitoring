@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { getHistoryLogs } from '../services/api';
-import { Database, Filter, Download } from 'lucide-react';
+import { Database, Filter, Download, FileText } from 'lucide-react';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 // Bảng màu chuẩn hóa cho các nhãn AI
 const PREDICTION_COLORS = {
@@ -34,6 +36,75 @@ export default function History() {
         };
         fetchHistory();
     }, []);
+
+    // ----------------------------------------------------
+    // HÀM XUẤT FILE CSV TRỰC TIẾP TỪ STATE FRONTEND
+    // ----------------------------------------------------
+    const exportToCSV = () => {
+        if (history.length === 0) return alert("Không có dữ liệu để xuất!");
+        
+        const headers = ['ID', 'Timestamp', 'Packet Count', 'AI Prediction Label', 'Destination / Websites'];
+        
+        const csvRows = history.map(item => {
+            const websites = Array.isArray(item.websites) ? item.websites.join('; ') : (item.websites || '');
+            const time = new Date(item.log_timestamp).toLocaleString('vi-VN');
+            // Bọc trong dấu ngoặc kép để tránh lỗi dấu phẩy trong chuỗi
+            return `${item.id},"${time}","${item.packet_count}","${item.ai_prediction}","${websites}"`;
+        });
+        
+        // Thêm BOM (\uFEFF) để Excel đọc tiếng Việt UTF-8 không bị lỗi font
+        const csvContent = "\uFEFF" + [headers.join(','), ...csvRows].join('\n');
+        
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `Network_Log_${new Date().getTime()}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    // ----------------------------------------------------
+    // HÀM XUẤT FILE PDF SỬ DỤNG jspdf VÀ jspdf-autotable
+    // ----------------------------------------------------
+    const exportToPDF = () => {
+        if (history.length === 0) return alert("Không có dữ liệu để xuất!");
+        
+        const doc = new jsPDF();
+        
+        // Cài đặt tiêu đề
+        doc.setFontSize(16);
+        doc.text("Network Traffic Classification Report", 14, 15);
+        doc.setFontSize(10);
+        doc.text(`Generated at: ${new Date().toLocaleString('vi-VN')}`, 14, 22);
+        
+        const tableColumn = ["ID", "Time", "Packets", "AI Label", "Destination"];
+        const tableRows = [];
+        
+        history.forEach(log => {
+            const websites = Array.isArray(log.websites) ? log.websites.join(', ') : (log.websites || '');
+            const logData = [
+                log.id, 
+                new Date(log.log_timestamp).toLocaleString('vi-VN'), 
+                log.packet_count, 
+                log.ai_prediction, 
+                websites
+            ];
+            tableRows.push(logData);
+        });
+        
+        doc.autoTable({
+            head: [tableColumn],
+            body: tableRows,
+            startY: 28,
+            theme: 'striped',
+            headStyles: { fillColor: [14, 165, 233] },
+            styles: { fontSize: 9 }
+        });
+        
+        doc.save(`Network_Report_${new Date().getTime()}.pdf`);
+    };
 
     // Hàm lấy màu cho Badge dựa trên tên nhãn
     const getBadgeStyle = (label) => {
@@ -69,12 +140,26 @@ export default function History() {
                     <p style={{ margin: 0, color: '#94a3b8', fontSize: '14px' }}>Truy xuất và xem lại toàn bộ lịch sử phân tích từ PostgreSQL</p>
                 </div>
                 
-                <button style={{ 
-                    background: 'rgba(14, 165, 233, 0.1)', color: '#0ea5e9', border: '1px solid rgba(14, 165, 233, 0.3)', 
-                    padding: '8px 16px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 'bold'
-                }}>
-                    <Download size={16} /> Xuất CSV
-                </button>
+                {/* NHÓM NÚT XUẤT BÁO CÁO */}
+                <div style={{ display: 'flex', gap: '12px' }}>
+                    <button 
+                        onClick={exportToCSV}
+                        style={{ 
+                            background: 'rgba(14, 165, 233, 0.1)', color: '#0ea5e9', border: '1px solid rgba(14, 165, 233, 0.3)', 
+                            padding: '8px 16px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 'bold'
+                        }}>
+                        <Download size={16} /> Xuất CSV
+                    </button>
+                    
+                    <button 
+                        onClick={exportToPDF}
+                        style={{ 
+                            background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', 
+                            padding: '8px 16px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 'bold'
+                        }}>
+                        <FileText size={16} /> Xuất PDF
+                    </button>
+                </div>
             </div>
 
             {/* Thanh công cụ (Bộ lọc) */}
