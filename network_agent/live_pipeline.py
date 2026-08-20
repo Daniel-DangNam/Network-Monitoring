@@ -80,7 +80,8 @@ def capture_traffic_loop(duration=30):
     while is_running:
         try:
             safe_print(f"\n[Luồng Thu Thập] Đang nghe lén mạng trong {duration} giây...")
-            packets = sniff(timeout=duration, filter="tcp or udp")
+            # Thêm count=3000 để giới hạn tối đa 3000 gói/chu kỳ (đủ trích xuất đặc trưng mà CIC không bị nghẽn)
+            packets = sniff(timeout=duration, filter="tcp or udp", count=3000)
             
             if not is_running: break 
             
@@ -190,8 +191,13 @@ def analyze_with_ai(model, csv_filename, visited_websites):
                 if 'protocol' in row: protocol_val = int(row['protocol'])
                 elif 'Protocol' in row: protocol_val = int(row['Protocol'])
                 
+                # Trích xuất dst_port nếu có
+                dst_port_val = row.get('dst_port', 0)
+                if 'Dst Port' in row: dst_port_val = row['Dst Port']
+
                 tensor_data = features_to_tensor(row.tolist())
-                result = hybrid_predict_advanced(model, tensor_data, primary_domain, protocol_val)
+                # Bổ sung dst_port_val vào tham số truyền cho hybrid_predict_advanced
+                result = hybrid_predict_advanced(model, tensor_data, primary_domain, protocol_val, dst_port_val)
                 
                 predictions.append(result)
                 valid_features.append(row.tolist())
