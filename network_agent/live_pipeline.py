@@ -16,7 +16,9 @@ from scapy.utils import PcapReader
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 from scapy.all import sniff, wrpcap, DNSQR
 from scapy.layers.tls.all import TLS_Ext_ServerName 
-from ai_core import load_ai_model, features_to_tensor, hybrid_predict_advanced
+
+# BỔ SUNG IMPORT HÀM DUNG HỢP TỪ AI_CORE MỚI
+from ai_core import load_ai_model, features_to_tensor, parallel_fusion_predict
 from cicflowmeter.sniffer import create_sniffer
 
 pcap_queue = queue.Queue()
@@ -130,25 +132,29 @@ def process_data_loop(model):
                 visited_websites = extract_domains(abs_pcap)
                 prediction_result = analyze_with_ai(model, abs_csv_out, visited_websites)
                 
-                # Đồng bộ tên miền hiển thị cho Web/WebSocket
-                display_websites = visited_websites if visited_websites else ([last_active_domain] if last_active_domain != "Unknown" else [])
-                
-                log_data = {
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "ai_prediction": prediction_result,
-                    "packet_count": pkt_count,
-                    "websites": display_websites
-                }
-                
-                safe_print("\n" + "="*60)
-                safe_print(f"🟢 [BACKEND READY] DỮ LIỆU JSON (GÓI {pkt_count} PACKETS):")
-                safe_print(json.dumps(log_data, indent=4, ensure_ascii=False))
-                safe_print("="*60)
+                # NẾU TRỌNG TÀI BÁO LÀ VPN HOẶC RÁC -> CHẶN KHÔNG ĐẨY LÊN WEB
+                if prediction_result == "IGNORED":
+                    safe_print(f"🛡️ [ANTI-VPN] Đã chặn luồng ẩn danh/VPN/Rác (Domain: {visited_websites}). (Không đẩy lên Dashboard)")
+                else:
+                    # Đồng bộ tên miền hiển thị cho Web/WebSocket
+                    display_websites = visited_websites if visited_websites else ([last_active_domain] if last_active_domain != "Unknown" else [])
+                    
+                    log_data = {
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "ai_prediction": prediction_result,
+                        "packet_count": pkt_count,
+                        "websites": display_websites
+                    }
+                    
+                    safe_print("\n" + "="*60)
+                    safe_print(f"🟢 [BACKEND READY] DỮ LIỆU JSON (GÓI {pkt_count} PACKETS):")
+                    safe_print(json.dumps(log_data, indent=4, ensure_ascii=False))
+                    safe_print("="*60)
 
-                try:
-                    requests.post(BACKEND_URL, json=log_data, timeout=3)
-                except Exception as err:
-                    safe_print(f"-> [Cảnh báo Web] Chưa thể đẩy dữ liệu lên Backend: {err}")
+                    try:
+                        requests.post(BACKEND_URL, json=log_data, timeout=3)
+                    except Exception as err:
+                        safe_print(f"-> [Cảnh báo Web] Chưa thể đẩy dữ liệu lên Backend: {err}")
             
             if os.path.exists(abs_pcap): os.remove(abs_pcap)
             if os.path.exists(abs_csv_out): os.remove(abs_csv_out)
@@ -165,7 +171,7 @@ def analyze_with_ai(model, csv_filename, visited_websites):
     try:
         df = pd.read_csv(csv_filename)
         df = df.replace([np.inf, -np.inf], np.nan).dropna()
-        if df.empty: return "Unknown"
+        if df.empty: return "IGNORED"
         
         df_ordered = pd.DataFrame()
         for col in KAGGLE_COLUMNS:
@@ -191,20 +197,23 @@ def analyze_with_ai(model, csv_filename, visited_websites):
                 if 'protocol' in row: protocol_val = int(row['protocol'])
                 elif 'Protocol' in row: protocol_val = int(row['Protocol'])
                 
-                # CHÚ Ý: Bổ sung lấy dst_port để đồng bộ với ai_core.py mới
                 dst_port_val = 0
                 if 'dst_port' in row: dst_port_val = int(row['dst_port'])
                 elif 'Dst Port' in row: dst_port_val = int(row['Dst Port'])
                 
                 tensor_data = features_to_tensor(row.tolist())
-                # Truyền thêm dst_port_val vào hàm hybrid_predict_advanced
-                result = hybrid_predict_advanced(model, tensor_data, primary_domain, protocol_val, dst_port_val)
                 
-                predictions.append(result)
-                valid_features.append(row.tolist())
+                # GỌI HÀM DUNG HỢP QUYẾT ĐỊNH (FUSION)
+                result = parallel_fusion_predict(model, tensor_data, primary_domain, protocol_val, dst_port_val)
+                
+                # CHỈ LƯU LẠI KẾT QUẢ NẾU KHÔNG PHẢI LÀ VPN/RÁC (SẼ LƯU CẢ "Unknown")
+                if result != "IGNORED":
+                    predictions.append(result)
+                    valid_features.append(row.tolist())
             except Exception: continue
                 
-        if not predictions: return "Unknown"
+        # NẾU TOÀN BỘ CÁC LUỒNG BỊ PHÁN LÀ VPN/RÁC -> TRẢ VỀ IGNORED
+        if not predictions: return "IGNORED"
         
         export_df = pd.DataFrame(valid_features, columns=df_ordered.columns)
         export_df['Destination / Websites'] = primary_domain
@@ -212,16 +221,16 @@ def analyze_with_ai(model, csv_filename, visited_websites):
         
         write_header = not os.path.exists(CSV_OUT_PATH)
         export_df.to_csv(CSV_OUT_PATH, mode='a', header=write_header, index=False)
-        safe_print(f"💾 [DATASET] Đã trích xuất và lưu {len(predictions)} luồng vào {CSV_OUT_PATH}")
+        safe_print(f"💾 [DATASET] Đã trích xuất và lưu {len(predictions)} luồng hợp lệ vào {CSV_OUT_PATH}")
         
         label_counts = Counter(predictions)
         most_common_label = label_counts.most_common(1)[0][0]
         
-        safe_print(f"🤖 [AI] Hành vi chính: {most_common_label} (Chi tiết: {dict(label_counts)})")
+        safe_print(f"🤖 [AI-FUSION] Hành vi chốt hạ: {most_common_label} (Chi tiết: {dict(label_counts)})")
         return most_common_label
     except Exception as e:
         safe_print(f"[AI] Lỗi phân tích: {e}")
-        return "Error"
+        return "IGNORED"
 
 def extract_domains(pcap_filename):
     tls_domains = []
@@ -260,11 +269,9 @@ def extract_domains(pcap_filename):
         
         # Streaming
         'youtube', 'googlevideo', 'ytimg', 'video.xx.fbcdn', 
-        'nflxvideo', 'netflix', 'vimeocdn', 'ttvnw',
-        
-        # VPN
-        'vpn', 'tunnel', 'openvpn', 'wireguard'
+        'nflxvideo', 'netflix', 'vimeocdn', 'ttvnw'
     ]
+    # LƯU Ý: ĐÃ XÓA TỪ KHÓA VPN TRONG PRIORITY ĐỂ AI KHÔNG BỊ PHÂN TÂM
 
     try:
         with PcapReader(pcap_filename) as pcap_reader:
@@ -310,7 +317,7 @@ def extract_domains(pcap_filename):
 def main():
     global is_running
     os.system('clear' if os.name == 'posix' else 'cls')
-    print("🚀 KHỞI ĐỘNG HỆ THỐNG GIÁM SÁT MẠNG TỰ ĐỘNG (FINAL VERSION) 🚀")
+    print("🚀 KHỞI ĐỘNG HỆ THỐNG GIÁM SÁT MẠNG TỰ ĐỘNG (FUSION VERSION) 🚀")
     model = load_ai_model('model_final_Application_Label.pth')
     
     capture_thread = threading.Thread(target=capture_traffic_loop, args=(30,))
