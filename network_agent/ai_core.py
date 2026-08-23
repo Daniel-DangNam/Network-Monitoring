@@ -84,12 +84,19 @@ def parallel_fusion_predict(model, tensor_input, sni_domain, protocol, dst_port=
     Chạy song song Rule-Based và AI, sau đó Trọng tài phân xử.
     """
     domain_lower = str(sni_domain).lower().strip() if sni_domain else ""
+    is_anonymous = domain_lower in ['', 'none', 'unknown', 'nan']
     
     # ==========================================
     # BÁC SĨ 1: RULE-BASED (Khám bằng Tên miền)
     # ==========================================
     rule_pred = "UNKNOWN"
-    if domain_lower not in ['', 'none', 'unknown', 'nan']:
+    
+    # ---> VÁ LỖI CỨU CÁNH CHO LUỒNG GOOGLE MEET/VOIP ẨN DANH <---
+    if is_anonymous and protocol == 17 and (dst_port == 3478 or dst_port == 443 or dst_port >= 10000):
+        rule_pred = 'VoIP'
+        
+    # NẾU CÓ TÊN MIỀN RÕ RÀNG
+    elif not is_anonymous:
         # Xử lý Cú lừa hệ sinh thái Google 
         if 'googleusercontent.com' in domain_lower:
             subdomain = domain_lower.split('.googleusercontent.com')[0]
@@ -98,7 +105,7 @@ def parallel_fusion_predict(model, tensor_input, sni_domain, protocol, dst_port=
             else:
                 rule_pred = 'google_ecosystem'
                 
-        # ---> VÁ LỖI GOOGLE MEET VÀ HỌP TRỰC TUYẾN <---
+        # ---> VÁ LỖI GOOGLE MEET VÀ HỌP TRỰC TUYẾN KHI BẮT ĐƯỢC TÊN MIỀN <---
         elif any(app in domain_lower for app in ['meet.google', 'zoom', 'teams', 'webex']):
             rule_pred = 'VoIP'
             
@@ -125,36 +132,41 @@ def parallel_fusion_predict(model, tensor_input, sni_domain, protocol, dst_port=
         
         ai_pred = CLASS_NAMES[idx.item()]
         ai_conf = confidence.item()
+        
+    # GỌT BỎ TIỀN TỐ "VPN-" ĐỂ LẤY BẢN CHẤT CỐT LÕI CỦA AI (Ví dụ: VPN-VoIP -> VoIP)
+    core_ai_pred = ai_pred.replace('VPN-', '')
+    if core_ai_pred == 'streaming':
+        core_ai_pred = 'Streaming'
 
     # ==========================================
     # TRỌNG TÀI DUNG HỢP (FUSION ENGINE) CHỐT HẠ KẾT QUẢ
     # ==========================================
     
     # LUẬT 1: THANH TRỪNG VPN / ẨN DANH HOÀN TOÀN
-    # Nếu không có tên miền HOẶC AI đoán chắc nịch là VPN -> Khẳng định là luồng mã hóa -> VỨT!
-    if not domain_lower or "VPN" in ai_pred:
+    # Nếu luồng ẩn danh, KHÔNG PHẢI là VoIP (ở rule cứu cánh), mà AI phán là VPN -> VỨT!
+    if is_anonymous and rule_pred != 'VoIP' and "VPN" in ai_pred:
         return "IGNORED"
 
     # LUẬT 2: Đồng thuận tuyệt đối
-    if rule_pred == ai_pred:
+    if rule_pred == ai_pred or rule_pred == core_ai_pred:
         return rule_pred
 
     # LUẬT 3: Trọng tài phân xử lỗi Google Drive (Bác sĩ Rule chịu thua, nhường Bác sĩ AI)
     if rule_pred == 'google_ecosystem':
-        if ai_pred in ['file_transfer', 'email']:
-            return ai_pred # Tin tưởng AI 100%
+        if core_ai_pred in ['file_transfer', 'email']:
+            return core_ai_pred # Tin tưởng AI 100%
         return 'file_transfer' # Mặc định CDN thường là tải file nặng
 
     # LUẬT 4: Trọng tài phân xử lỗi "Zalo Chat" vs "Zalo Gọi thoại"
     # Rule nhìn thấy zalo.me bảo là Chat. Nhưng AI đo thấy băng thông lớn, tốc độ nhả gói tin đều
-    if rule_pred == 'chat' and ai_pred == 'VoIP' and ai_conf > 0.60:
+    if rule_pred == 'chat' and core_ai_pred == 'VoIP' and ai_conf > 0.50:
         return 'VoIP' # AI chính xác hơn trong trường hợp này!
 
     # LUẬT 5: Rule-based bị mù (Gặp trang web mới tinh hoặc lướt web như Dân Trí)
     if rule_pred == 'UNKNOWN':
-        # Nếu AI tự tin > 70% nó là 1 trong 5 nhãn Non-VPN thì nghe AI
-        if ai_conf > 0.70 and ai_pred in ['Streaming', 'VoIP', 'chat', 'email', 'file_transfer']:
-            return ai_pred
+        # Hạ độ tự tin xuống > 0.50 thay vì 0.70 để AI mạnh dạn phán đoán hơn với luồng Việt Nam
+        if ai_conf > 0.50 and core_ai_pred in ['Streaming', 'VoIP', 'chat', 'email', 'file_transfer']:
+            return core_ai_pred
         # Trả về Unknown để hiển thị lên bảng Dashboard kèm tên miền
         return "Unknown" 
 
