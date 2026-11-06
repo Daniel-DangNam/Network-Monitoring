@@ -31,7 +31,8 @@ last_active_domain = "Unknown"
 ## ========================================================
 # TẠO FOLDER LƯU TRỮ DỮ LIỆU ĐÁNH GIÁ (DATASETS)
 # ========================================================
-DATASET_DIR = "csv"
+BASE_AGENT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATASET_DIR = os.path.join(BASE_AGENT_DIR, "data", "csv")
 if not os.path.exists(DATASET_DIR):
     os.makedirs(DATASET_DIR)
     
@@ -342,7 +343,10 @@ def main():
     global is_running
     os.system('clear' if os.name == 'posix' else 'cls')
     print("🚀 KHỞI ĐỘNG HỆ THỐNG GIÁM SÁT MẠNG TỰ ĐỘNG (FUSION VERSION) 🚀")
-    model = load_ai_model('model_final_Application_Label.pth')
+    model_path = os.path.join(BASE_AGENT_DIR, "model_final_Application_Label.pth")
+    if not os.path.exists(model_path):
+        model_path = os.path.join(BASE_AGENT_DIR, "models", "model_final_Application_Label.pth")
+    model = load_ai_model(model_path)
     
     capture_thread = threading.Thread(target=capture_traffic_loop, args=(10,))
     capture_thread.daemon = True 
