@@ -92,14 +92,6 @@ class AgentService:
                         pass
 
             cmd = [python_exec, "-u", script_path]
-            # Nếu chạy trên Linux và user không phải root, kiểm tra xem có quyền sudo -n không
-            if platform.system() != "Windows" and os.geteuid() != 0:
-                try:
-                    res = subprocess.run(["sudo", "-n", "true"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    if res.returncode == 0:
-                        cmd = ["sudo", "-n", "-E", python_exec, "-u", script_path]
-                except Exception:
-                    pass
 
             log_file = open(os.path.join(agent_dir, "agent.log"), "w", encoding="utf-8")
             self._process = subprocess.Popen(
