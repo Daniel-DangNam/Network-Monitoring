@@ -48,21 +48,21 @@
 
 ```mermaid
 flowchart TD
-    subgraph Current ["HIỆN TRẠNG (HỆ THỐNG HIỆN TẠI)"]
-        A1["Sniff 10s (Scapy)"] -->|Ghi file đĩa| B1["traffic_*.pcap"]
-        B1 -->|Gọi Tool ngoài| C1["CICFlowMeter Batch"]
-        C1 -->|Ghi file đĩa| D1["traffic_*.csv"]
-        D1 -->|Pandas đọc| E1["ResNet-18 (Offline DL) + Rules"]
-        E1 -->|HTTP POST| F1["FastAPI & Dashboard"]
+    subgraph Current ["HIỆN TRẠNG - HỆ THỐNG HIỆN TẠI"]
+        A1["Sniff 10s Scapy"] -->|"Ghi file đĩa"| B1["traffic_timestamp.pcap"]
+        B1 -->|"Gọi Tool ngoài"| C1["CICFlowMeter Batch"]
+        C1 -->|"Ghi file đĩa"| D1["traffic_timestamp.csv"]
+        D1 -->|"Pandas đọc"| E1["ResNet-18 Offline DL + Rules"]
+        E1 -->|"HTTP POST"| F1["FastAPI và Dashboard"]
     end
 
-    subgraph Target ["MỤC TIÊU NÂNG CẤP CHUẨN ĐỒ ÁN (TARGET PIPELINE)"]
-        A2["Live NIC Sniffing (Scapy / TShark)"] -->|In-Memory Packet Stream| B2["Flow Aggregator (Chuẩn 5-Tuple)"]
-        P2["Upload PCAP File"] -->|Reader Stream| B2
-        B2 -->|Quản lý Timeout & FIN/RST| C2["In-Memory Feature Extractor (81 Features)"]
-        C2 -->|Real-time Feature Vector| D2["Hybrid Engine: ResNet-18 + Online Stream Learner"]
-        D2 -->|Phát hiện Concept Drift (ADWIN)| E2["Incremental Weight Update (partial_fit)"]
-        D2 -->|WebSocket Realtime| F2["Dashboard / Alert / Reporting"]
+    subgraph Target ["MỤC TIÊU NÂNG CẤP CHUẨN ĐỒ ÁN"]
+        A2["Live NIC Sniffing Scapy"] -->|"In-Memory Packet Stream"| B2["Flow Aggregator Chuẩn 5-Tuple"]
+        P2["Upload PCAP File"] -->|"Reader Stream"| B2
+        B2 -->|"Quản lý Timeout và cờ FIN RST"| C2["In-Memory Feature Extractor 81 Features"]
+        C2 -->|"Real-time Feature Vector"| D2["Hybrid Engine: ResNet-18 + Online Stream Learner"]
+        D2 -->|"Phát hiện Concept Drift ADWIN"| E2["Incremental Weight Update partial_fit"]
+        D2 -->|"WebSocket Realtime"| F2["Dashboard và Alert Reporting"]
     end
 ```
 
