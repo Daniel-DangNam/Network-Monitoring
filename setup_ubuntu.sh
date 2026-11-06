@@ -27,10 +27,10 @@ if [ ! -d "venv" ]; then
 fi
 source venv/bin/activate
 
-# 3. Cài đặt thư viện backend (kèm psycopg2 cho PostgreSQL)
+# 3. Cài đặt thư viện backend (kèm psycopg2 cho PostgreSQL và websockets cho realtime)
 echo "3. Cài đặt thư viện Backend..."
 pip install --upgrade pip
-pip install fastapi uvicorn passlib pyjwt python-multipart sqlalchemy bcrypt requests psycopg2-binary
+pip install fastapi "uvicorn[standard]" websockets passlib pyjwt python-multipart sqlalchemy bcrypt requests psycopg2-binary
 
 # 4. Cài đặt thư viện AI Agent (Dùng PyTorch CPU siêu nhẹ tránh tràn ổ đĩa máy ảo)
 echo "4. Cài đặt thư viện Network Agent (CICFlowMeter, Scapy, AI)..."

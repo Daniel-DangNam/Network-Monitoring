@@ -35,6 +35,10 @@ if [ -d "../venv" ]; then
 elif [ -d "venv" ]; then
     source venv/bin/activate
 fi
+if ! python3 -c "import websockets" 2>/dev/null; then
+    echo "⚠️ Đang cài đặt thư viện websockets cho realtime..."
+    pip install websockets
+fi
 python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 sleep 2
