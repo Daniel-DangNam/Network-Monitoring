@@ -82,11 +82,28 @@ class AgentService:
 
             env = os.environ.copy()
             if not env.get("NETWORK_INTERFACE"):
-                env["NETWORK_INTERFACE"] = ""
+                if platform.system() != "Windows":
+                    try:
+                        out = subprocess.check_output(["ip", "route", "show", "default"], text=True, timeout=2)
+                        parts = out.strip().split()
+                        if "dev" in parts:
+                            env["NETWORK_INTERFACE"] = parts[parts.index("dev") + 1]
+                    except Exception:
+                        pass
+
+            cmd = [python_exec, "-u", script_path]
+            # Nếu chạy trên Linux và user không phải root, kiểm tra xem có quyền sudo -n không
+            if platform.system() != "Windows" and os.geteuid() != 0:
+                try:
+                    res = subprocess.run(["sudo", "-n", "true"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    if res.returncode == 0:
+                        cmd = ["sudo", "-n", "-E", python_exec, "-u", script_path]
+                except Exception:
+                    pass
 
             log_file = open(os.path.join(agent_dir, "agent.log"), "w", encoding="utf-8")
             self._process = subprocess.Popen(
-                [python_exec, "-u", script_path],
+                cmd,
                 cwd=agent_dir if os.path.exists(agent_dir) else None,
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
@@ -96,6 +113,18 @@ class AgentService:
             return {"status": "success", "message": "Đã khởi động AI Network Agent thành công!"}
         except Exception as e:
             return {"status": "error", "message": f"Lỗi khi khởi động Agent: {str(e)}"}
+
+    def get_logs(self, max_lines=30) -> list[str]:
+        current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        log_path = os.path.join(os.path.dirname(current_dir), "network_agent", "agent.log")
+        if os.path.exists(log_path):
+            try:
+                with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                    lines = f.readlines()
+                    return [line.strip() for line in lines[-max_lines:]]
+            except Exception as e:
+                return [f"Lỗi đọc file log: {e}"]
+        return ["Chưa có tệp nhật ký agent.log"]
 
     def stop_agent(self) -> dict:
         if not self.is_running():

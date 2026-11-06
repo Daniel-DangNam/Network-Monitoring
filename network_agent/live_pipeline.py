@@ -78,14 +78,40 @@ def shutdown_handler(signum, frame):
 signal.signal(signal.SIGINT, shutdown_handler)
 signal.signal(signal.SIGTERM, shutdown_handler)
 
+def detect_active_interface():
+    # 1. Biến môi trường
+    env_iface = os.getenv("NETWORK_INTERFACE", "").strip()
+    if env_iface:
+        return env_iface
+        
+    # 2. Dò tìm card mạng default gateway trên Linux qua lệnh 'ip route'
+    if sys.platform != "win32":
+        try:
+            import subprocess
+            out = subprocess.check_output(["ip", "route", "show", "default"], text=True, timeout=2)
+            parts = out.strip().split()
+            if "dev" in parts:
+                dev_name = parts[parts.index("dev") + 1]
+                if dev_name:
+                    return dev_name
+        except Exception:
+            pass
+
+    # 3. Lấy từ Scapy conf.iface nếu hợp lệ
+    c_iface = getattr(conf, 'iface', None)
+    if c_iface and str(c_iface) != 'lo':
+        return str(c_iface)
+
+    return None
+
 def capture_traffic_loop(duration=10):
     global is_running
-    iface = os.getenv("NETWORK_INTERFACE", "").strip() or None
+    iface = detect_active_interface()
     if iface:
-        safe_print(f"📡 [Luồng Thu Thập] Card mạng thiết lập: {iface}")
+        safe_print(f"📡 [Luồng Thu Thập] Lắng nghe trên card mạng: {iface}")
     else:
         current_iface = getattr(conf, 'iface', 'auto')
-        safe_print(f"📡 [Luồng Thu Thập] Card mạng mặc định hệ điều hành: {current_iface}")
+        safe_print(f"📡 [Luồng Thu Thập] Lắng nghe trên card mạng mặc định: {current_iface}")
 
     while is_running:
         try:

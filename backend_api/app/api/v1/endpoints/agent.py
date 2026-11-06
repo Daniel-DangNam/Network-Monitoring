@@ -15,3 +15,9 @@ def stop_agent():
 def get_agent_status():
     return agent_service.get_status()
 
+@router.get("/agent-logs")
+def get_agent_logs():
+    return {
+        "logs": agent_service.get_logs()
+    }
+
