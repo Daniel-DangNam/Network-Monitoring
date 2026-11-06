@@ -61,3 +61,4 @@ echo "=================================================="
 
 # Giữ script luôn chạy và lắng nghe Ctrl+C
 wait
+
