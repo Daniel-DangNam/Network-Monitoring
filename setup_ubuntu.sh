@@ -4,10 +4,10 @@ echo "=================================================="
 echo " [SETUP] Khởi tạo môi trường Ubuntu / Linux       "
 echo "=================================================="
 
-# 1. Cài đặt các gói hệ thống cần thiết (libpcap, python3-venv, tcpdump, postgresql)
+# 1. Cài đặt các gói hệ thống cần thiết (libpcap, python3-venv, tcpdump, postgresql, nodejs, npm)
 echo "1. Cài đặt thư viện hệ thống cần thiết..."
 sudo apt-get update
-sudo apt-get install -y python3-dev python3-venv python3-pip libpcap-dev tcpdump curl postgresql postgresql-contrib libpq-dev
+sudo apt-get install -y python3-dev python3-venv python3-pip libpcap-dev tcpdump curl postgresql postgresql-contrib libpq-dev nodejs npm
 
 # Khởi động dịch vụ PostgreSQL
 sudo systemctl enable postgresql || true

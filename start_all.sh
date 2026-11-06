@@ -35,13 +35,17 @@ if [ -d "../venv" ]; then
 elif [ -d "venv" ]; then
     source venv/bin/activate
 fi
-python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 &
+python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 sleep 2
 
 # 2. Khởi chạy Frontend Dashboard (Port 5173)
 echo "2. Đang khởi động React Dashboard (Port 5173)..."
 cd "$ROOT_DIR/frontend-dashboard"
+if ! command -v npm &> /dev/null; then
+    echo "⚠️ Chưa tìm thấy npm! Đang tự động cài đặt nodejs và npm..."
+    sudo apt-get update && sudo apt-get install -y nodejs npm
+fi
 if [ ! -d "node_modules" ]; then
     echo "Đang cài đặt thư viện npm..."
     npm install
