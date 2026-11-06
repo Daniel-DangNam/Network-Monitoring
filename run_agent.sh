@@ -25,3 +25,4 @@ if [ "$EUID" -ne 0 ]; then
 else
     python3 live_pipeline.py
 fi
+
