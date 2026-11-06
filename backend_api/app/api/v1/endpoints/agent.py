@@ -13,7 +13,5 @@ def stop_agent():
 
 @router.get("/agent-status")
 def get_agent_status():
-    return {
-        "is_running": agent_service.is_running()
-    }
+    return agent_service.get_status()
 

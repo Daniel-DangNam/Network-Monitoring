@@ -13,6 +13,10 @@ node_modules/
 # Uploads và database tạm
 uploads/
 *.sqlite3
+*.log
+network_agent/agent.log
+network_agent/traffic_*.csv
+network_agent/csv/*.csv
 
 # Tránh trùng lặp file model dung lượng lớn
 network_agent/models/*.pth

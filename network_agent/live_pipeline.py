@@ -14,7 +14,7 @@ from collections import Counter
 from scapy.utils import PcapReader
 
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
-from scapy.all import sniff, wrpcap, DNSQR
+from scapy.all import sniff, wrpcap, DNSQR, DNSRR, conf
 from scapy.layers.tls.all import TLS_Ext_ServerName 
 
 # BỔ SUNG IMPORT HÀM DUNG HỢP TỪ AI_CORE MỚI
@@ -31,7 +31,8 @@ last_active_domain = "Unknown"
 ## ========================================================
 # TẠO FOLDER LƯU TRỮ DỮ LIỆU ĐÁNH GIÁ (DATASETS)
 # ========================================================
-DATASET_DIR = "csv"
+BASE_AGENT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATASET_DIR = os.path.join(BASE_AGENT_DIR, "data", "csv")
 if not os.path.exists(DATASET_DIR):
     os.makedirs(DATASET_DIR)
     
@@ -77,13 +78,29 @@ def shutdown_handler(signum, frame):
 signal.signal(signal.SIGINT, shutdown_handler)
 signal.signal(signal.SIGTERM, shutdown_handler)
 
-def capture_traffic_loop(duration=30):
+def capture_traffic_loop(duration=10):
     global is_running
+    iface = os.getenv("NETWORK_INTERFACE", "").strip() or None
+    if iface:
+        safe_print(f"📡 [Luồng Thu Thập] Card mạng thiết lập: {iface}")
+    else:
+        current_iface = getattr(conf, 'iface', 'auto')
+        safe_print(f"📡 [Luồng Thu Thập] Card mạng mặc định hệ điều hành: {current_iface}")
+
     while is_running:
         try:
             safe_print(f"\n[Luồng Thu Thập] Đang nghe lén mạng trong {duration} giây...")
             # Giữ count=3000 để bọc lót chống tràn RAM khi demo
-            packets = sniff(timeout=duration, filter="tcp or udp", count=3000)
+            sniff_kwargs = {
+                "timeout": duration,
+                "filter": "tcp or udp",
+                "count": 3000,
+                "store": True
+            }
+            if iface:
+                sniff_kwargs["iface"] = iface
+
+            packets = sniff(**sniff_kwargs)
             
             if not is_running: break 
             
@@ -292,6 +309,14 @@ def extract_domains(pcap_filename):
                             if not any(junk in qname for junk in BLACKLIST_KEYWORDS):
                                 dns_domains.append(qname)
                     except: pass
+
+                elif pkt.haslayer(DNSRR):
+                    try:
+                        rrname = pkt[DNSRR].rrname.decode('utf-8').strip('.').lower()
+                        if not rrname.endswith('.local') and not rrname.endswith('.arpa') and '.' in rrname:
+                            if not any(junk in rrname for junk in BLACKLIST_KEYWORDS):
+                                dns_domains.append(rrname)
+                    except: pass
     except: pass
     
     def get_best_domain(domain_list):
@@ -318,9 +343,12 @@ def main():
     global is_running
     os.system('clear' if os.name == 'posix' else 'cls')
     print("🚀 KHỞI ĐỘNG HỆ THỐNG GIÁM SÁT MẠNG TỰ ĐỘNG (FUSION VERSION) 🚀")
-    model = load_ai_model('model_final_Application_Label.pth')
+    model_path = os.path.join(BASE_AGENT_DIR, "model_final_Application_Label.pth")
+    if not os.path.exists(model_path):
+        model_path = os.path.join(BASE_AGENT_DIR, "models", "model_final_Application_Label.pth")
+    model = load_ai_model(model_path)
     
-    capture_thread = threading.Thread(target=capture_traffic_loop, args=(30,))
+    capture_thread = threading.Thread(target=capture_traffic_loop, args=(10,))
     capture_thread.daemon = True 
     process_thread = threading.Thread(target=process_data_loop, args=(model,))
     process_thread.daemon = True

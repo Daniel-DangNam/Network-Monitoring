@@ -3,6 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,9 @@ try:
             pass
 except Exception as e:
     logger.warning(f"Không thể kết nối cơ sở dữ liệu chính ({SQLALCHEMY_DATABASE_URL}): {e}. Chuyển sang SQLite local.")
-    SQLALCHEMY_DATABASE_URL = "sqlite:///./network_db.sqlite3"
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    db_file = os.path.join(base_dir, "network_db.sqlite3")
+    SQLALCHEMY_DATABASE_URL = f"sqlite:///{db_file}"
     engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
