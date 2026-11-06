@@ -2,6 +2,8 @@ from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import engine, Base
+import app.models.user
+import app.models.traffic
 from app.api.v1.api_router import api_router
 from app.utils.socket_manager import manager
 

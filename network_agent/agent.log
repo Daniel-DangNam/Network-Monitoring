@@ -1,0 +1,46 @@
+🚀 KHỞI ĐỘNG HỆ THỐNG GIÁM SÁT MẠNG TỰ ĐỘNG (FUSION VERSION) 🚀
+[AI] Đang nạp cấu trúc ResNet-18 từ model_final_Application_Label.pth...
+
+[Luồng Thu Thập] Đang nghe lén mạng trong 10 giây...
+-> [Luồng Thu Thập] Đã bắt được 3000 gói tin. Chuyển sang hàng đợi...
+
+[Luồng Thu Thập] Đang nghe lén mạng trong 10 giây...
+-> [Luồng Thu Thập] Đã bắt được 3000 gói tin. Chuyển sang hàng đợi...
+
+[Luồng Thu Thập] Đang nghe lén mạng trong 10 giây...
+-> [Luồng Thu Thập] Đã bắt được 3000 gói tin. Chuyển sang hàng đợi...
+
+[Luồng Thu Thập] Đang nghe lén mạng trong 10 giây...
+💾 [DATASET] Đã trích xuất và lưu 3 luồng hợp lệ vào csv\network_test_dataset_20261106_152504.csv
+🤖 [AI-FUSION] Hành vi chốt hạ: Unknown (Chi tiết: {'VoIP': 1, 'Unknown': 2})
+
+============================================================
+🟢 [BACKEND READY] DỮ LIỆU JSON (GÓI 3000 PACKETS):
+{
+    "timestamp": "2026-11-06 15:25:34",
+    "ai_prediction": "Unknown",
+    "packet_count": 3000,
+    "websites": []
+}
+============================================================
+-> [Luồng Thu Thập] Đã bắt được 3000 gói tin. Chuyển sang hàng đợi...
+
+[Luồng Thu Thập] Đang nghe lén mạng trong 10 giây...
+-> [Luồng Thu Thập] Đã bắt được 3000 gói tin. Chuyển sang hàng đợi...
+
+[Luồng Thu Thập] Đang nghe lén mạng trong 10 giây...
+💾 [DATASET] Đã trích xuất và lưu 5 luồng hợp lệ vào csv\network_test_dataset_20261106_152504.csv
+🤖 [AI-FUSION] Hành vi chốt hạ: Unknown (Chi tiết: {'VoIP': 1, 'Unknown': 4})
+
+============================================================
+🟢 [BACKEND READY] DỮ LIỆU JSON (GÓI 3000 PACKETS):
+{
+    "timestamp": "2026-11-06 15:25:53",
+    "ai_prediction": "Unknown",
+    "packet_count": 3000,
+    "websites": []
+}
+============================================================
+-> [Luồng Thu Thập] Đã bắt được 273 gói tin. Chuyển sang hàng đợi...
+
+[Luồng Thu Thập] Đang nghe lén mạng trong 10 giây...

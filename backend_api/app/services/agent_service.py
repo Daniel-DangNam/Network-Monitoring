@@ -34,9 +34,12 @@ class AgentService:
             else:
                 kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
 
+            log_file = open(os.path.join(agent_dir, "agent.log"), "w", encoding="utf-8")
             self._process = subprocess.Popen(
-                [python_exec, script_path],
+                [python_exec, "-u", script_path],
                 cwd=agent_dir if os.path.exists(agent_dir) else None,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
                 **kwargs
             )
             return {"status": "success", "message": "Đã khởi động AI Network Agent thành công!"}

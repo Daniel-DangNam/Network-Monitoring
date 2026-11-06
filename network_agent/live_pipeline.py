@@ -77,7 +77,7 @@ def shutdown_handler(signum, frame):
 signal.signal(signal.SIGINT, shutdown_handler)
 signal.signal(signal.SIGTERM, shutdown_handler)
 
-def capture_traffic_loop(duration=30):
+def capture_traffic_loop(duration=10):
     global is_running
     while is_running:
         try:
@@ -320,7 +320,7 @@ def main():
     print("🚀 KHỞI ĐỘNG HỆ THỐNG GIÁM SÁT MẠNG TỰ ĐỘNG (FUSION VERSION) 🚀")
     model = load_ai_model('model_final_Application_Label.pth')
     
-    capture_thread = threading.Thread(target=capture_traffic_loop, args=(30,))
+    capture_thread = threading.Thread(target=capture_traffic_loop, args=(10,))
     capture_thread.daemon = True 
     process_thread = threading.Thread(target=process_data_loop, args=(model,))
     process_thread.daemon = True
