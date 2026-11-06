@@ -15,3 +15,4 @@ echo [2/2] Dang khoi chay Vite Dev Server...
 echo ===================================================
 call npm run dev
 pause
+

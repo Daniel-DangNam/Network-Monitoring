@@ -1,5 +1,9 @@
 import torch
-from network_agent.ai.rules import CLASS_NAMES, SNI_RULES_ADVANCED
+
+try:
+    from ai.rules import CLASS_NAMES, SNI_RULES_ADVANCED
+except ImportError:
+    from network_agent.ai.rules import CLASS_NAMES, SNI_RULES_ADVANCED
 
 def parallel_fusion_predict(model, tensor_input, sni_domain, protocol, dst_port=0):
     """
@@ -93,4 +97,3 @@ def parallel_fusion_predict(model, tensor_input, sni_domain, protocol, dst_port=
         return rule_pred
 
     return "Unknown"
-

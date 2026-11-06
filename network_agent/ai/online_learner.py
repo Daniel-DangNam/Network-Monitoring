@@ -46,5 +46,11 @@ class OnlineTrafficClassifier:
             pred = self._model.predict(x_reshaped)[0]
             return (pred, 0.5)
 
-online_classifier = OnlineTrafficClassifier()
+_default_classifier = None
+
+def get_online_classifier():
+    global _default_classifier
+    if _default_classifier is None:
+        _default_classifier = OnlineTrafficClassifier()
+    return _default_classifier
 

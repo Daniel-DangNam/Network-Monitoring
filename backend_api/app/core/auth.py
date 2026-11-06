@@ -4,8 +4,7 @@ from app.core.security import (
     verify_password,
     get_password_hash,
     create_access_token,
-    oauth2_scheme,
-    pwd_context
+    oauth2_scheme
 )
 
 SECRET_KEY = settings.SECRET_KEY
@@ -17,7 +16,6 @@ __all__ = [
     "get_password_hash",
     "create_access_token",
     "oauth2_scheme",
-    "pwd_context",
     "timedelta",
     "SECRET_KEY",
     "ALGORITHM",

@@ -7,3 +7,4 @@ echo Luu y: Chay script nay voi quyen Administrator neu can bat goi tin!
 echo ===================================================
 python main.py --mode live
 pause
+
