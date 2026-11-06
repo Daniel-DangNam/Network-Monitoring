@@ -107,23 +107,23 @@ def detect_active_interface():
 
     return None
 
-def capture_traffic_loop(duration=10):
+def capture_traffic_loop(duration=30):
     global is_running
     iface = detect_active_interface()
     if iface:
-        safe_print(f"📡 [Luồng Thu Thập] Lắng nghe trên card mạng: {iface}")
+        safe_print(f"📡 [Luồng Thu Thập] Lắng nghe trên card mạng: {iface} (Chu kỳ: {duration}s)")
     else:
         current_iface = getattr(conf, 'iface', 'auto')
-        safe_print(f"📡 [Luồng Thu Thập] Lắng nghe trên card mạng mặc định: {current_iface}")
+        safe_print(f"📡 [Luồng Thu Thập] Lắng nghe trên card mạng mặc định: {current_iface} (Chu kỳ: {duration}s)")
 
     while is_running:
         try:
             safe_print(f"\n[Luồng Thu Thập] Đang nghe lén mạng trong {duration} giây...")
-            # Giữ count=3000 để bọc lót chống tràn RAM khi demo
+            # Giữ count=10000 để bọc lót chống tràn RAM khi demo với chu kỳ dài hơn
             sniff_kwargs = {
                 "timeout": duration,
                 "filter": "tcp or udp",
-                "count": 3000,
+                "count": 10000,
                 "store": True
             }
             if iface:
@@ -377,7 +377,12 @@ def main():
         model_path = os.path.join(BASE_AGENT_DIR, "models", "model_final_Application_Label.pth")
     model = load_ai_model(model_path)
     
-    capture_thread = threading.Thread(target=capture_traffic_loop, args=(10,))
+    try:
+        configured_duration = int(os.getenv("CAPTURE_DURATION", "30"))
+    except (ValueError, TypeError):
+        configured_duration = 30
+
+    capture_thread = threading.Thread(target=capture_traffic_loop, args=(configured_duration,))
     capture_thread.daemon = True 
     process_thread = threading.Thread(target=process_data_loop, args=(model,))
     process_thread.daemon = True

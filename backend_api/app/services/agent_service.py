@@ -8,6 +8,7 @@ from app.core.config import settings
 class AgentService:
     def __init__(self):
         self._process = None
+        self._current_duration = 30
 
     def is_running(self) -> bool:
         if self._process is not None and self._process.poll() is None:
@@ -37,12 +38,15 @@ class AgentService:
         return {
             "is_running": running,
             "pid": self._process.pid if (self._process and self._process.poll() is None) else None,
-            "interface": iface
+            "interface": iface,
+            "duration": getattr(self, "_current_duration", 30)
         }
 
-    def start_agent(self) -> dict:
+    def start_agent(self, duration: int = 30) -> dict:
         if self.is_running():
             return {"status": "info", "message": "Network Agent đang chạy rồi!"}
+
+        self._current_duration = max(5, int(duration))
 
         # Tự động xác định đường dẫn Python và script (hỗ trợ venv trên Ubuntu/Linux và Windows)
         current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -81,6 +85,7 @@ class AgentService:
                 kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
 
             env = os.environ.copy()
+            env["CAPTURE_DURATION"] = str(self._current_duration)
             if not env.get("NETWORK_INTERFACE"):
                 if platform.system() != "Windows":
                     try:

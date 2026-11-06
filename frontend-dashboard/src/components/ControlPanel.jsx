@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Zap, Play, Square, Activity } from 'lucide-react';
+import { Zap, Play, Square, Activity, Clock } from 'lucide-react';
 
 export default function ControlPanel({ isConnected }) {
     // Khôi phục trạng thái từ localStorage để khi chuyển tab không bị reset giao diện
@@ -8,6 +8,10 @@ export default function ControlPanel({ isConnected }) {
     });
     const [isLoading, setIsLoading] = useState(false);
     const [adapterName, setAdapterName] = useState('auto (eth0/ens33)');
+    const [duration, setDuration] = useState(() => {
+        const saved = localStorage.getItem('agent_capture_duration');
+        return saved ? Number(saved) : 30;
+    });
 
     // Đồng bộ trạng thái Agent với Backend API
     const syncAgentStatus = useCallback(async () => {
@@ -42,7 +46,8 @@ export default function ControlPanel({ isConnected }) {
         try {
             const response = await fetch('http://localhost:8000/api/v1/start-agent', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ duration: duration })
             });
             const data = await response.json();
             
@@ -137,13 +142,51 @@ export default function ControlPanel({ isConnected }) {
                     </div>
                     <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8' }}>
                         Adapter: <span style={{ color: '#0ea5e9', fontWeight: 'bold' }}>{adapterName}</span> | 
-                        Mode: <span style={{ color: '#0ea5e9', fontWeight: 'bold' }}>Live Pipeline</span> | 
+                        Chu kỳ: <span style={{ color: '#38bdf8', fontWeight: 'bold' }}>{duration}s</span> | 
                         WebSocket: {isConnected ? <span style={{ color: '#22c55e', fontWeight: 'bold' }}>Connected</span> : <span style={{ color: '#ef4444', fontWeight: 'bold' }}>Disconnected</span>}
                     </p>
                 </div>
             </div>
             
-            <div style={{ display: 'flex', gap: '15px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px', 
+                    background: '#0f172a', 
+                    padding: '8px 12px', 
+                    borderRadius: '8px', 
+                    border: '1px solid #1e293b' 
+                }}>
+                    <Clock size={16} color="#38bdf8" />
+                    <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: '500' }}>Chu kỳ:</span>
+                    <select 
+                        value={duration} 
+                        onChange={(e) => {
+                            const val = Number(e.target.value);
+                            setDuration(val);
+                            localStorage.setItem('agent_capture_duration', val.toString());
+                        }}
+                        disabled={isListening || isLoading}
+                        style={{
+                            background: '#1e293b',
+                            color: '#38bdf8',
+                            border: '1px solid #334155',
+                            borderRadius: '4px',
+                            padding: '3px 8px',
+                            fontSize: '13px',
+                            fontWeight: 'bold',
+                            outline: 'none',
+                            cursor: (isListening || isLoading) ? 'not-allowed' : 'pointer'
+                        }}
+                    >
+                        <option value={10}>10 giây</option>
+                        <option value={15}>15 giây</option>
+                        <option value={30}>30 giây (Mặc định)</option>
+                        <option value={60}>60 giây</option>
+                    </select>
+                </div>
+
                 <button 
                     onClick={handleStart} 
                     disabled={isListening || isLoading}
