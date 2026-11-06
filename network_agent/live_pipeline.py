@@ -15,7 +15,10 @@ from scapy.utils import PcapReader
 
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 from scapy.all import sniff, wrpcap, DNSQR, DNSRR, conf
-from scapy.layers.tls.all import TLS_Ext_ServerName 
+try:
+    from scapy.layers.tls.all import TLS_Ext_ServerName
+except Exception:
+    TLS_Ext_ServerName = None 
 
 # BỔ SUNG IMPORT HÀM DUNG HỢP TỪ AI_CORE MỚI
 from ai_core import load_ai_model, features_to_tensor, parallel_fusion_predict
@@ -319,7 +322,7 @@ def extract_domains(pcap_filename):
     try:
         with PcapReader(pcap_filename) as pcap_reader:
             for pkt in pcap_reader:
-                if pkt.haslayer(TLS_Ext_ServerName):
+                if TLS_Ext_ServerName and pkt.haslayer(TLS_Ext_ServerName):
                     try:
                         server_names = pkt[TLS_Ext_ServerName].servernames
                         if server_names: 

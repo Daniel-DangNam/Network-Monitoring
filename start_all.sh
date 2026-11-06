@@ -4,17 +4,29 @@ ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT_DIR"
 
 echo "=================================================="
-echo " 🚀 KHỞI CHẠY TOÀN BỘ HỆ THỐNG NETWORK MONITORING 🚀"
-echo " (Bao gồm: Backend + Frontend + AI Sniffer Agent)"
+echo " 🚀 KHỞI CHẠY HỆ THỐNG NETWORK MONITORING DASHBOARD 🚀"
+echo " (Chế độ chờ: Nhấn 'Start Sniffing' trên Web để bắt)"
 echo "=================================================="
 
-# 1. Yêu cầu quyền sudo một lần ngay từ đầu để Agent có quyền bắt gói tin trên card mạng
-echo "🔑 Cấp quyền root cho Network Agent:"
+# 1. Yêu cầu quyền sudo một lần để phân quyền RAW socket cho Python
+echo "🔑 Phân quyền card mạng cho Python (để bấm Start/Stop trực tiếp trên Web):"
 sudo -v
 
-# Tự động giữ quyền sudo trong lúc script đang chạy
-while true; do sudo -n true; sleep 50; kill -0 "$$" || exit; done 2>/dev/null &
-SUDO_KEEP_PID=$!
+# Kích hoạt virtualenv để lấy đúng binary Python
+if [ -d "$ROOT_DIR/venv" ]; then
+    source "$ROOT_DIR/venv/bin/activate"
+elif [ -d "$ROOT_DIR/backend_api/venv" ]; then
+    source "$ROOT_DIR/backend_api/venv/bin/activate"
+fi
+PYTHON_BIN="$(which python3)"
+PYTHON_REAL="$(readlink -f "$PYTHON_BIN")"
+
+# Cấp quyền CAP_NET_RAW cho Python để Backend có thể start/stop agent mà không bị văng
+echo "Phân quyền CAP_NET_RAW cho: $PYTHON_REAL"
+sudo setcap cap_net_raw,cap_net_admin=eip "$PYTHON_REAL" 2>/dev/null || true
+
+# Dọn dẹp các tiến trình agent cũ nếu có để trạng thái ban đầu là STANDBY sạch sẽ
+pkill -f "live_pipeline.py" 2>/dev/null || true
 
 # Hàm dọn dẹp khi bấm Ctrl+C
 cleanup() {
@@ -22,20 +34,14 @@ cleanup() {
     echo "=================================================="
     echo " 🛑 Đang tắt toàn bộ hệ thống..."
     echo "=================================================="
-    if [ -n "$SUDO_KEEP_PID" ]; then
-        kill "$SUDO_KEEP_PID" 2>/dev/null || true
-    fi
-    if [ -n "$AGENT_PID" ]; then
-        sudo kill "$AGENT_PID" 2>/dev/null || true
-    fi
     if [ -n "$BACKEND_PID" ]; then
         kill "$BACKEND_PID" 2>/dev/null || true
     fi
     if [ -n "$FRONTEND_PID" ]; then
         kill "$FRONTEND_PID" 2>/dev/null || true
     fi
-    sudo pkill -f "live_pipeline.py" 2>/dev/null || true
-    echo "✅ Đã tắt an toàn toàn bộ 3 dịch vụ!"
+    pkill -f "live_pipeline.py" 2>/dev/null || true
+    echo "✅ Đã tắt an toàn toàn bộ dịch vụ!"
     exit 0
 }
 
@@ -44,12 +50,6 @@ trap cleanup SIGINT SIGTERM EXIT
 # 2. Khởi chạy Backend (Port 8000)
 echo "1. Đang khởi động Backend FastAPI (Port 8000)..."
 cd "$ROOT_DIR/backend_api"
-if [ -d "../venv" ]; then
-    source ../venv/bin/activate
-elif [ -d "venv" ]; then
-    source venv/bin/activate
-fi
-PYTHON_BIN="$(which python3)"
 python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 sleep 2
@@ -69,19 +69,13 @@ npm run dev -- --host &
 FRONTEND_PID=$!
 sleep 2
 
-# 4. Khởi chạy AI Network Sniffer Agent với quyền root
-echo "3. Đang khởi động AI Network Sniffer Agent (Card mạng ens33)..."
-cd "$ROOT_DIR/network_agent"
-sudo -E "$PYTHON_BIN" -u live_pipeline.py &
-AGENT_PID=$!
-sleep 2
-
 echo ""
 echo "=================================================="
-echo " 🎉 TẤT CẢ 3 DỊCH VỤ ĐÃ HOẠT ĐỘNG HOÀN HẢO!"
+echo " 🎉 HỆ THỐNG ĐÃ SẴN SÀNG Ở CHẾ ĐỘ CHỜ (STANDBY)!"
 echo " 👉 Mở trình duyệt truy cập: http://localhost:5173"
-echo " 📡 Agent đã TỰ ĐỘNG BẮT GÓI TIN trên card mạng!"
-echo " 🛑 Khi muốn dừng toàn bộ: Bấm [Ctrl + C] tại Terminal này."
+echo " 🔘 Nhấn nút 'Start Sniffing' trên Web để BẮT ĐẦU"
+echo " 🔘 Nhấn nút 'Stop Sniffing' trên Web để TẠM DỪNG"
+echo " 🛑 Khi muốn tắt máy chủ: Bấm [Ctrl + C] tại Terminal này."
 echo "=================================================="
 
 # Giữ script luôn chạy và lắng nghe Ctrl+C
