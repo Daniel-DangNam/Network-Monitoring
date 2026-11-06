@@ -39,6 +39,10 @@ if ! python3 -c "import websockets" 2>/dev/null; then
     echo "⚠️ Đang cài đặt thư viện websockets cho realtime..."
     pip install websockets
 fi
+if ! python3 -c "import psycopg2" 2>/dev/null && ! python3 -c "import psycopg" 2>/dev/null; then
+    echo "⚠️ Đang cài đặt thư viện kết nối PostgreSQL (psycopg)..."
+    pip install "psycopg[binary]" 2>/dev/null || pip install psycopg2-binary 2>/dev/null || true
+fi
 python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 sleep 2

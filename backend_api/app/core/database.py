@@ -14,10 +14,16 @@ try:
     if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
         engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
     else:
-        engine = create_engine(SQLALCHEMY_DATABASE_URL, pool_pre_ping=True)
-        # Thử kết nối test
-        with engine.connect() as conn:
-            pass
+        try:
+            engine = create_engine(SQLALCHEMY_DATABASE_URL, pool_pre_ping=True)
+            with engine.connect() as conn:
+                pass
+        except Exception:
+            # Thử driver psycopg v3 (hỗ trợ Python 3.12/3.13/3.14 mới)
+            alt_url = SQLALCHEMY_DATABASE_URL.replace("postgresql://", "postgresql+psycopg://")
+            engine = create_engine(alt_url, pool_pre_ping=True)
+            with engine.connect() as conn:
+                pass
 except Exception as e:
     logger.warning(f"Không thể kết nối cơ sở dữ liệu chính ({SQLALCHEMY_DATABASE_URL}): {e}. Chuyển sang SQLite local.")
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

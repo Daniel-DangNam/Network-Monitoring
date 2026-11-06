@@ -6,8 +6,8 @@ class Settings(BaseModel):
     VERSION: str = "2.0.0 (DATN Edition)"
     API_V1_STR: str = "/api/v1"
     
-    # Security
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "ptit_secret_network_ai_2026")
+    # Security (Khóa bí mật độ dài >= 32 bytes chuẩn RFC 7518 HS256)
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "ptit_secret_network_ai_2026_super_secure_key_datn")
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
     
