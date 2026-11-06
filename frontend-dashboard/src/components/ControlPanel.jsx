@@ -1,11 +1,42 @@
-import { useState } from 'react';
-import { Zap, Play, Square } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Zap, Play, Square, Activity } from 'lucide-react';
 
 export default function ControlPanel({ isConnected }) {
-    const [isListening, setIsListening] = useState(false);
-    const [isLoading, setIsLoading] = useState(false); // Trạng thái chờ API phản hồi[cite: 15]
+    // Khôi phục trạng thái từ localStorage để khi chuyển tab không bị reset giao diện
+    const [isListening, setIsListening] = useState(() => {
+        return localStorage.getItem('agent_is_listening') === 'true';
+    });
+    const [isLoading, setIsLoading] = useState(false);
+    const [adapterName, setAdapterName] = useState('auto (eth0/ens33)');
 
-    // Hàm gọi API kích hoạt Network Agent[cite: 15]
+    // Đồng bộ trạng thái Agent với Backend API
+    const syncAgentStatus = useCallback(async () => {
+        try {
+            const response = await fetch('http://localhost:8000/api/v1/agent-status');
+            if (response.ok) {
+                const data = await response.json();
+                const running = Boolean(data.is_running);
+                setIsListening(running);
+                localStorage.setItem('agent_is_listening', running ? 'true' : 'false');
+                if (data.interface) {
+                    setAdapterName(data.interface);
+                }
+            }
+        } catch {
+            // Backend có thể đang tắt hoặc mất kết nối tạm thời
+        }
+    }, []);
+
+    useEffect(() => {
+        // Đồng bộ ngay khi mount (chuyển từ tab khác sang)
+        syncAgentStatus();
+
+        // Định kỳ kiểm tra trạng thái mỗi 3 giây
+        const intervalId = setInterval(syncAgentStatus, 3000);
+        return () => clearInterval(intervalId);
+    }, [syncAgentStatus]);
+
+    // Hàm gọi API kích hoạt Network Agent
     const handleStart = async () => {
         setIsLoading(true);
         try {
@@ -17,19 +48,21 @@ export default function ControlPanel({ isConnected }) {
             
             if (response.ok && (data.status === 'success' || data.status === 'info')) {
                 setIsListening(true);
+                localStorage.setItem('agent_is_listening', 'true');
                 console.log("Hệ thống báo:", data.message);
             } else {
-                alert("Lỗi từ máy chủ: " + data.detail);
+                alert("Lỗi từ máy chủ: " + (data.detail || data.message));
             }
         } catch (error) {
             console.error("Lỗi kết nối:", error);
             alert("Không thể kết nối đến Backend để kích hoạt!");
         } finally {
             setIsLoading(false);
+            syncAgentStatus();
         }
     };
 
-    // Hàm gọi API dừng Network Agent[cite: 15]
+    // Hàm gọi API dừng Network Agent
     const handleStop = async () => {
         setIsLoading(true);
         try {
@@ -41,15 +74,17 @@ export default function ControlPanel({ isConnected }) {
             
             if (response.ok && (data.status === 'success' || data.status === 'info')) {
                 setIsListening(false);
+                localStorage.setItem('agent_is_listening', 'false');
                 console.log("Hệ thống báo:", data.message);
             } else {
-                alert("Lỗi từ máy chủ: " + data.detail);
+                alert("Lỗi từ máy chủ: " + (data.detail || data.message));
             }
         } catch (error) {
             console.error("Lỗi kết nối:", error);
             alert("Không thể kết nối đến Backend để dừng!");
         } finally {
             setIsLoading(false);
+            syncAgentStatus();
         }
     };
 
@@ -60,21 +95,49 @@ export default function ControlPanel({ isConnected }) {
             borderRadius: '12px', 
             marginBottom: '20px', 
             border: '1px solid #1e293b', 
-            borderTop: '2px solid #0ea5e9', // Viền xanh neon phía trên
+            borderTop: isListening ? '2px solid #22c55e' : '2px solid #0ea5e9',
             boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
             display: 'flex', 
             justifyContent: 'space-between', 
             alignItems: 'center' 
         }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                <Zap size={28} color="#0ea5e9" fill="#0ea5e9" style={{ filter: 'drop-shadow(0 0 8px rgba(14,165,233,0.6))' }} />
+                <Zap 
+                    size={28} 
+                    color={isListening ? "#22c55e" : "#0ea5e9"} 
+                    fill={isListening ? "#22c55e" : "#0ea5e9"} 
+                    style={{ filter: `drop-shadow(0 0 8px ${isListening ? 'rgba(34,197,94,0.6)' : 'rgba(14,165,233,0.6)'})` }} 
+                />
                 <div>
-                    <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: '#f8fafc', fontWeight: 'bold', letterSpacing: '0.5px' }}>
-                        NETWORK CAPTURE CONTROL CENTER
-                    </h3>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '0 0 8px 0' }}>
+                        <h3 style={{ margin: 0, fontSize: '18px', color: '#f8fafc', fontWeight: 'bold', letterSpacing: '0.5px' }}>
+                            NETWORK CAPTURE CONTROL CENTER
+                        </h3>
+                        <span style={{
+                            fontSize: '11px',
+                            fontWeight: 'bold',
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            background: isListening ? 'rgba(34, 197, 94, 0.15)' : 'rgba(100, 116, 139, 0.2)',
+                            color: isListening ? '#22c55e' : '#94a3b8',
+                            border: `1px solid ${isListening ? '#22c55e' : '#475569'}`,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px'
+                        }}>
+                            <span style={{
+                                width: '6px',
+                                height: '6px',
+                                borderRadius: '50%',
+                                background: isListening ? '#22c55e' : '#94a3b8',
+                                boxShadow: isListening ? '0 0 6px #22c55e' : 'none'
+                            }}></span>
+                            {isListening ? 'ACTIVE SNIFFING' : 'STANDBY'}
+                        </span>
+                    </div>
                     <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8' }}>
-                        Adapter: <span style={{ color: '#0ea5e9', fontWeight: 'bold' }}>eth0</span> | 
-                        Mode: <span style={{ color: '#0ea5e9', fontWeight: 'bold' }}>Reverse Connect</span> | 
+                        Adapter: <span style={{ color: '#0ea5e9', fontWeight: 'bold' }}>{adapterName}</span> | 
+                        Mode: <span style={{ color: '#0ea5e9', fontWeight: 'bold' }}>Live Pipeline</span> | 
                         WebSocket: {isConnected ? <span style={{ color: '#22c55e', fontWeight: 'bold' }}>Connected</span> : <span style={{ color: '#ef4444', fontWeight: 'bold' }}>Disconnected</span>}
                     </p>
                 </div>
@@ -95,11 +158,12 @@ export default function ControlPanel({ isConnected }) {
                         display: 'flex',
                         alignItems: 'center',
                         gap: '8px',
-                        boxShadow: (isListening || isLoading) ? 'none' : '0 0 10px rgba(34,197,94,0.3)'
+                        boxShadow: (isListening || isLoading) ? 'none' : '0 0 10px rgba(34,197,94,0.3)',
+                        transition: 'all 0.2s'
                     }}
                 >
                     <Play size={16} fill="currentColor" />
-                    {isLoading && !isListening ? "STARTING..." : "Start Sniffing"}
+                    {isLoading && !isListening ? "STARTING..." : (isListening ? "Sniffing Active" : "Start Sniffing")}
                 </button>
                 <button 
                     onClick={handleStop} 
@@ -115,7 +179,8 @@ export default function ControlPanel({ isConnected }) {
                         display: 'flex',
                         alignItems: 'center',
                         gap: '8px',
-                        boxShadow: (!isListening || isLoading) ? 'none' : '0 0 10px rgba(239,68,68,0.3)'
+                        boxShadow: (!isListening || isLoading) ? 'none' : '0 0 10px rgba(239,68,68,0.3)',
+                        transition: 'all 0.2s'
                     }}
                 >
                     <Square size={16} fill="currentColor" />

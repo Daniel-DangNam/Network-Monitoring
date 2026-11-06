@@ -202,13 +202,32 @@ Network-Monitoring/
 
 ## 6. Hướng Dẫn Cài Đặt & Vận Hành Hệ Thống
 
-### 6.1. Yêu cầu môi trường
-* **Hệ điều hành:** Linux (Ubuntu 22.04+ khuyên dùng cho sniffing trực tiếp) hoặc Windows 10/11 (kèm Npcap để bắt gói tin).
-* **Python:** Phiên bản 3.10 trở lên.
-* **Node.js:** Phiên bản 18.x trở lên cùng `npm`.
-* **Cơ sở dữ liệu:** PostgreSQL (hoặc tự động dùng SQLite tích hợp sẵn khi chạy thử nghiệm).
+### 6.1. Hướng dẫn nhanh cho Ubuntu / Linux (Khuyên dùng)
+Hệ thống đã chuẩn bị sẵn các script khởi chạy tự động cho Ubuntu:
+1. **Thiết lập toàn bộ môi trường (chỉ chạy lần đầu):**
+   ```bash
+   chmod +x setup_ubuntu.sh run_backend.sh run_frontend.sh run_agent.sh
+   ./setup_ubuntu.sh
+   ```
+2. **Khởi chạy Backend Server:**
+   ```bash
+   ./run_backend.sh
+   ```
+3. **Khởi chạy Frontend Dashboard:**
+   ```bash
+   ./run_frontend.sh
+   ```
+4. **Khởi chạy Network Agent (Tùy chọn nếu không bấm từ Dashboard):**
+   ```bash
+   ./run_agent.sh
+   # (Hoặc bấm nút "Start Sniffing" trực tiếp trên Dashboard tại http://localhost:5173)
+   ```
 
-### 6.2. Khởi chạy Phân hệ Backend (`backend_api`)
+---
+
+### 6.2. Hướng dẫn thủ công từng phân hệ
+
+#### A. Phân hệ Backend (`backend_api`)
 1. Di chuyển vào thư mục backend và cài đặt thư viện:
    ```bash
    cd backend_api
@@ -225,7 +244,7 @@ Network-Monitoring/
    ```
    * Tài liệu API Swagger UI có sẵn tại: `http://localhost:8000/docs`
 
-### 6.3. Khởi chạy Phân hệ Giao diện (`frontend-dashboard`)
+#### B. Phân hệ Giao diện (`frontend-dashboard`)
 1. Di chuyển vào thư mục frontend và cài đặt gói phụ thuộc:
    ```bash
    cd frontend-dashboard
@@ -237,7 +256,7 @@ Network-Monitoring/
    ```
    * Truy cập giao diện tại: `http://localhost:5173`
 
-### 6.4. Vận hành Phân hệ Trạm tác vụ mạng (`network_agent`)
+#### C. Phân hệ Trạm tác vụ mạng (`network_agent`)
 1. Di chuyển vào thư mục agent và cài đặt thư viện:
    ```bash
    cd network_agent
@@ -247,9 +266,10 @@ Network-Monitoring/
    * **Chế độ 1: Bắt gói tin trực tiếp từ card mạng (Live Mode):**
      *(Cần quyền Administrator trên Windows hoặc `sudo` trên Linux để truy cập card mạng thô)*
      ```bash
+     # Trên Ubuntu (chỉ định card mạng nếu cần, ví dụ ens33 hoặc eth0):
+     sudo -E $(which python3) live_pipeline.py
+     # Hoặc:
      python main.py --mode live
-     # hoặc chạy trực tiếp pipeline:
-     python live_pipeline.py
      ```
    * **Chế độ 2: Đọc và bóc tách luồng từ file PCAP (Offline PCAP Mode):**
      ```bash

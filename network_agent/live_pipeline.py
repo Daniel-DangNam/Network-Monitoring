@@ -14,7 +14,7 @@ from collections import Counter
 from scapy.utils import PcapReader
 
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
-from scapy.all import sniff, wrpcap, DNSQR
+from scapy.all import sniff, wrpcap, DNSQR, DNSRR, conf
 from scapy.layers.tls.all import TLS_Ext_ServerName 
 
 # BỔ SUNG IMPORT HÀM DUNG HỢP TỪ AI_CORE MỚI
@@ -79,11 +79,27 @@ signal.signal(signal.SIGTERM, shutdown_handler)
 
 def capture_traffic_loop(duration=10):
     global is_running
+    iface = os.getenv("NETWORK_INTERFACE", "").strip() or None
+    if iface:
+        safe_print(f"📡 [Luồng Thu Thập] Card mạng thiết lập: {iface}")
+    else:
+        current_iface = getattr(conf, 'iface', 'auto')
+        safe_print(f"📡 [Luồng Thu Thập] Card mạng mặc định hệ điều hành: {current_iface}")
+
     while is_running:
         try:
             safe_print(f"\n[Luồng Thu Thập] Đang nghe lén mạng trong {duration} giây...")
             # Giữ count=3000 để bọc lót chống tràn RAM khi demo
-            packets = sniff(timeout=duration, filter="tcp or udp", count=3000)
+            sniff_kwargs = {
+                "timeout": duration,
+                "filter": "tcp or udp",
+                "count": 3000,
+                "store": True
+            }
+            if iface:
+                sniff_kwargs["iface"] = iface
+
+            packets = sniff(**sniff_kwargs)
             
             if not is_running: break 
             
@@ -291,6 +307,14 @@ def extract_domains(pcap_filename):
                         if not qname.endswith('.local') and not qname.endswith('.arpa') and '.' in qname:
                             if not any(junk in qname for junk in BLACKLIST_KEYWORDS):
                                 dns_domains.append(qname)
+                    except: pass
+
+                elif pkt.haslayer(DNSRR):
+                    try:
+                        rrname = pkt[DNSRR].rrname.decode('utf-8').strip('.').lower()
+                        if not rrname.endswith('.local') and not rrname.endswith('.arpa') and '.' in rrname:
+                            if not any(junk in rrname for junk in BLACKLIST_KEYWORDS):
+                                dns_domains.append(rrname)
                     except: pass
     except: pass
     
