@@ -1,0 +1,13 @@
+from sqlalchemy import Column, Integer, String, DateTime, JSON
+from datetime import datetime
+from app.core.database import Base
+
+class ClassificationHistory(Base):
+    __tablename__ = "classification_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    log_timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    ai_prediction = Column(String, index=True)
+    packet_count = Column(Integer, default=0)
+    websites = Column(JSON, default=list)
+

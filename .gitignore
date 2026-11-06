@@ -3,10 +3,23 @@ venv/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+node_modules/
+.env
 
 # Bỏ qua các file gói tin rác (nếu còn sót)
 *.pcap
 *.pcapng
+
+# Uploads và database tạm
+uploads/
+*.sqlite3
+
+# Tránh trùng lặp file model dung lượng lớn
+network_agent/models/*.pth
+
+# Tools & plugins không thuộc đồ án
+ponytail/
+AGENTS.md
 
 # (Tùy chọn) Bỏ qua file model .pth nếu dung lượng nó lớn hơn 100MB
 # model_final_Application_Label.pth
