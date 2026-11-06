@@ -32,9 +32,13 @@ echo "3. Cài đặt thư viện Backend..."
 pip install --upgrade pip
 pip install fastapi uvicorn passlib pyjwt python-multipart sqlalchemy bcrypt requests psycopg2-binary
 
-# 4. Cài đặt thư viện AI Agent (Scapy, PyTorch, CICFlowMeter, Scikit-Learn)
+# 4. Cài đặt thư viện AI Agent (Dùng PyTorch CPU siêu nhẹ tránh tràn ổ đĩa máy ảo)
 echo "4. Cài đặt thư viện Network Agent (CICFlowMeter, Scapy, AI)..."
-pip install scapy pandas numpy torch torchvision cicflowmeter scikit-learn
+# Xóa cache tạm để giải phóng dung lượng
+pip cache purge || true
+# Cài bản PyTorch CPU (~180MB thay vì 4GB CUDA)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pip install scapy pandas numpy cicflowmeter scikit-learn
 
 # 5. Phân quyền chạy raw socket cho Python (không cần sudo sau này)
 echo "5. Phân quyền CAP_NET_RAW cho Python..."
