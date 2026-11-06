@@ -1,16 +1,17 @@
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Activity, FileText, Users, Settings, LogOut } from 'lucide-react';
+import { Activity, FileText, Users, Settings, LogOut, UploadCloud } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 export default function Sidebar() {
     const navigate = useNavigate();
     const location = useLocation();
+    const { logout } = useAuth();
 
     const handleLogout = () => {
-        localStorage.removeItem('token');
+        logout();
         navigate('/login');
     };
 
-    // Hàm xử lý style linh hoạt cho mục đang Active[cite: 14]
     const linkStyle = (path) => {
         const isActive = location.pathname === path;
         return {
@@ -29,12 +30,15 @@ export default function Sidebar() {
     };
 
     return (
-        <aside style={{ width: '260px', background: '#0a0f1c', borderRight: '1px solid #1e293b', display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <aside style={{ width: '260px', background: '#0a0f1c', borderRight: '1px solid #1e293b', display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 65px)' }}>
             
-            {/* Các liên kết điều hướng[cite: 14] */}
+            {/* Các liên kết điều hướng */}
             <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '20px' }}>
                 <Link to="/dashboard" style={linkStyle('/dashboard')}>
                     <Activity size={20} /> Dashboard
+                </Link>
+                <Link to="/pcap" style={linkStyle('/pcap')}>
+                    <UploadCloud size={20} /> Phân Tích PCAP
                 </Link>
                 <Link to="/history" style={linkStyle('/history')}>
                     <FileText size={20} /> Traffic History
@@ -47,7 +51,7 @@ export default function Sidebar() {
                 </Link>
             </nav>
 
-            {/* Nút Đăng xuất ở cuối trang[cite: 14] */}
+            {/* Nút Đăng xuất ở cuối trang */}
             <div style={{ marginTop: 'auto', padding: '20px' }}>
                 <button 
                     onClick={handleLogout} 
