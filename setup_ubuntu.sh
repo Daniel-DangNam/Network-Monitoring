@@ -4,10 +4,20 @@ echo "=================================================="
 echo " [SETUP] Khởi tạo môi trường Ubuntu / Linux       "
 echo "=================================================="
 
-# 1. Cài đặt các gói hệ thống cần thiết (libpcap, python3-venv, tcpdump)
+# 1. Cài đặt các gói hệ thống cần thiết (libpcap, python3-venv, tcpdump, postgresql)
 echo "1. Cài đặt thư viện hệ thống cần thiết..."
 sudo apt-get update
-sudo apt-get install -y python3-dev python3-venv python3-pip libpcap-dev tcpdump curl
+sudo apt-get install -y python3-dev python3-venv python3-pip libpcap-dev tcpdump curl postgresql postgresql-contrib libpq-dev
+
+# Khởi động dịch vụ PostgreSQL
+sudo systemctl enable postgresql || true
+sudo systemctl start postgresql || true
+
+# Tự động tạo user và database cho dự án nếu chưa có
+echo "Khởi tạo cơ sở dữ liệu PostgreSQL (network_db)..."
+sudo -u postgres psql -tc "SELECT 1 FROM pg_user WHERE usename = 'hoanganh'" | grep -q 1 || sudo -u postgres psql -c "CREATE USER hoanganh WITH PASSWORD '123456';" || true
+sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname = 'network_db'" | grep -q 1 || sudo -u postgres psql -c "CREATE DATABASE network_db OWNER hoanganh;" || true
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE network_db TO hoanganh;" || true
 
 # 2. Tạo môi trường ảo
 echo "2. Khởi tạo Python Virtual Environment..."
@@ -17,14 +27,14 @@ if [ ! -d "venv" ]; then
 fi
 source venv/bin/activate
 
-# 3. Cài đặt thư viện backend
+# 3. Cài đặt thư viện backend (kèm psycopg2 cho PostgreSQL)
 echo "3. Cài đặt thư viện Backend..."
 pip install --upgrade pip
-pip install fastapi uvicorn passlib pyjwt python-multipart sqlalchemy bcrypt requests
+pip install fastapi uvicorn passlib pyjwt python-multipart sqlalchemy bcrypt requests psycopg2-binary
 
-# 4. Cài đặt thư viện AI Agent
-echo "4. Cài đặt thư viện Network Agent..."
-pip install scapy pandas numpy torch torchvision cicflowmeter
+# 4. Cài đặt thư viện AI Agent (Scapy, PyTorch, CICFlowMeter, Scikit-Learn)
+echo "4. Cài đặt thư viện Network Agent (CICFlowMeter, Scapy, AI)..."
+pip install scapy pandas numpy torch torchvision cicflowmeter scikit-learn
 
 # 5. Phân quyền chạy raw socket cho Python (không cần sudo sau này)
 echo "5. Phân quyền CAP_NET_RAW cho Python..."

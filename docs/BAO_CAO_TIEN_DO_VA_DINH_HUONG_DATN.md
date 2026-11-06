@@ -30,13 +30,14 @@
    - Trang **Lịch sử lưu lượng (History)** hỗ trợ phân trang và xuất báo cáo CSV, PDF.
    - Trang **Phân tích PCAP (PcapAnalysis)** cho phép kéo thả file lưu lượng để phân tích.
 
-2. **Máy chủ Trung tâm Bất đồng bộ (Backend API):**
+2. **Máy chủ Trung tâm Bất đồng bộ (Backend API) & Cơ Sở Dữ Liệu PostgreSQL:**
    - Viết bằng **FastAPI** hiệu năng cao, xác thực bảo mật JWT, phân quyền tài khoản quản trị.
    - WebSocket Server (`/ws/realtime`) phát sóng dữ liệu trực tiếp từ trạm thu thập tới trình duyệt người dùng với độ trễ mili-giây.
-   - Hỗ trợ lưu trữ cơ sở dữ liệu kép: PostgreSQL cho môi trường sản xuất và SQLite tích hợp sẵn cho demo.
+   - **Hệ quản trị Cơ sở dữ liệu chính thức: PostgreSQL** (lưu trữ toàn vẹn lịch sử phân loại luồng mạng, tài khoản người dùng, tối ưu đánh chỉ mục Index theo thời gian và 5-tuple). Hỗ trợ cơ chế tự động Fallback sang SQLite local khi chạy thử nghiệm nhanh.
 
-3. **Trạm tác vụ Mạng (Network Agent - Hybrid Core):**
+3. **Trạm tác vụ Mạng (Network Agent - CICFlowMeter & Hybrid AI Core):**
    - Bắt gói tin trực tiếp từ card mạng (Scapy Sniffer).
+   - **Tích hợp bộ trích xuất chuẩn CICFlowMeter:** Đóng vai trò là "trái tim" tính toán 81 đặc trưng hình thái thống kê luồng (Flow Duration, IAT, Packet Length Stats, Flag counts,...) chuẩn học thuật của Viện An ninh mạng Canada (CIC - Canadian Institute for Cybersecurity).
    - Module bóc tách tên miền kết hợp bản tin TLS ClientHello (`TLS_Ext_ServerName`) và bản tin DNS Query/Response (`DNSQR`/`DNSRR`).
    - Lõi AI lai (Hybrid Decision-Level Fusion): Kết hợp Rule-based tên miền và mạng nơ-ron học sâu ResNet-18 để nhận diện chính xác 5 nhóm hành vi ứng dụng.
    - Đã tối ưu và cung cấp bộ script khởi chạy tự động chuẩn hóa cho môi trường **Ubuntu / Linux (VMware)** (`setup_ubuntu.sh`, `run_backend.sh`, `run_frontend.sh`, `run_agent.sh`).
@@ -108,6 +109,44 @@ Bảng Dashboard sẽ bổ sung thêm cột **"Thiết bị nguồn (Client IP /
 ---
 
 ## 5. Lộ Trình Triển Khai Tiếp Theo
-1. **Giai đoạn 1:** Nối trực tiếp `FlowAggregator` 5-Tuple In-Memory vào `live_pipeline.py` (loại bỏ hoàn toàn việc tạo file `.pcap`/`.csv` tạm).
-2. **Giai đoạn 2:** Hoàn thiện module `OnlineTrafficClassifier` với thuật toán cập nhật gia tăng `partial_fit` và phát hiện trôi dạt dữ liệu ADWIN.
+1. **Giai đoạn 1:** Tối ưu hóa bộ gom luồng 5-Tuple kết hợp chuẩn trích xuất đặc trưng **CICFlowMeter** (tính toán trực tiếp các thống kê luồng IAT, Flow Duration, Packet Length... trong bộ nhớ RAM, loại bỏ hoàn toàn việc tạo file `.pcap`/`.csv` tạm ra ổ cứng).
+2. **Giai đoạn 2:** Hoàn thiện module `OnlineTrafficClassifier` với thuật toán cập nhật gia tăng `partial_fit` và phát hiện trôi dạt dữ liệu ADWIN dựa trên vector 81 đặc trưng chuẩn CIC.
 3. **Giai đoạn 3:** Hoàn thiện tính năng phân tích file PCAP trên giao diện Web và thêm nút "Cải chính nhãn" (Active Learning).
+
+---
+
+## 6. Hướng Dẫn Cấu Hình Cơ Sở Dữ Liệu PostgreSQL Trên Ubuntu
+Để hệ thống chạy trên CSDL **PostgreSQL** chuẩn hóa (thay vì SQLite tạm), thực hiện các bước sau trên máy ảo Ubuntu:
+
+### 6.1. Cài đặt PostgreSQL
+```bash
+sudo apt update
+sudo apt install -y postgresql postgresql-contrib libpq-dev
+sudo systemctl enable postgresql
+sudo systemctl start postgresql
+```
+
+### 6.2. Tạo User và Database cho dự án
+```bash
+# Đăng nhập vào postgres
+sudo -u postgres psql
+
+# Chạy các câu lệnh SQL sau:
+CREATE USER hoanganh WITH PASSWORD '123456';
+CREATE DATABASE network_db OWNER hoanganh;
+GRANT ALL PRIVILEGES ON DATABASE network_db TO hoanganh;
+\q
+```
+
+### 6.3. Khởi tạo bảng dữ liệu và tài khoản quản trị
+```bash
+# Kích hoạt môi trường ảo
+source venv/bin/activate
+
+# Khởi tạo tài khoản Admin mặc định
+cd backend_api
+python scripts/create_admin.py
+cd ..
+```
+*Hệ thống sẽ tự động tạo bảng trong PostgreSQL và lưu trữ an toàn toàn bộ log luồng mạng.*
+
