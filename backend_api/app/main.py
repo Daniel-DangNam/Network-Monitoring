@@ -1,5 +1,6 @@
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import inspect, text
 from app.core.config import settings
 from app.core.database import engine, Base, SessionLocal
 import app.models.user
@@ -11,6 +12,20 @@ from app.utils.socket_manager import manager
 
 # Tự động tạo các bảng cơ sở dữ liệu nếu chưa tồn tại
 Base.metadata.create_all(bind=engine)
+
+# Tự động bổ sung cột client_ip nếu DB cũ chưa có
+def ensure_schema_migrations():
+    try:
+        inspector = inspect(engine)
+        if "classification_history" in inspector.get_table_names():
+            cols = [c["name"] for c in inspector.get_columns("classification_history")]
+            if "client_ip" not in cols:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE classification_history ADD COLUMN client_ip VARCHAR DEFAULT 'Local'"))
+    except Exception:
+        pass
+
+ensure_schema_migrations()
 
 # Tự động khởi tạo tài khoản quản trị viên mặc định (admin / 123456) nếu chưa có
 def init_default_admin():

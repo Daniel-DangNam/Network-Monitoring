@@ -43,13 +43,14 @@ export default function History() {
     const exportToCSV = () => {
         if (history.length === 0) return alert("Không có dữ liệu để xuất!");
         
-        const headers = ['ID', 'Timestamp', 'Packet Count', 'AI Prediction Label', 'Destination / Websites'];
+        const headers = ['ID', 'Timestamp', 'Client IP', 'Packet Count', 'AI Prediction Label', 'Destination / Websites'];
         
         const csvRows = history.map(item => {
             const websites = Array.isArray(item.websites) ? item.websites.join('; ') : (item.websites || '');
             const time = new Date(item.log_timestamp).toLocaleString('vi-VN');
+            const clientIp = item.client_ip || 'Local';
             // Bọc trong dấu ngoặc kép để tránh lỗi dấu phẩy trong chuỗi
-            return `${item.id},"${time}","${item.packet_count}","${item.ai_prediction}","${websites}"`;
+            return `${item.id},"${time}","${clientIp}","${item.packet_count}","${item.ai_prediction}","${websites}"`;
         });
         
         // Thêm BOM (\uFEFF) để Excel đọc tiếng Việt UTF-8 không bị lỗi font
@@ -79,7 +80,7 @@ export default function History() {
         doc.setFontSize(10);
         doc.text(`Generated at: ${new Date().toLocaleString('vi-VN')}`, 14, 22);
         
-        const tableColumn = ["ID", "Time", "Packets", "AI Label", "Destination"];
+        const tableColumn = ["ID", "Time", "Client IP", "Packets", "AI Label", "Destination"];
         const tableRows = [];
         
         history.forEach(log => {
@@ -87,6 +88,7 @@ export default function History() {
             const logData = [
                 log.id, 
                 new Date(log.log_timestamp).toLocaleString('vi-VN'), 
+                log.client_ip || 'Local',
                 log.packet_count, 
                 log.ai_prediction, 
                 websites
@@ -179,6 +181,7 @@ export default function History() {
                             <tr style={{ background: 'rgba(15, 23, 42, 0.6)', color: '#94a3b8' }}>
                                 <th style={{ padding: '14px 20px', fontWeight: 'normal' }}>ID</th>
                                 <th style={{ padding: '14px 20px', fontWeight: 'normal' }}>Timestamp</th>
+                                <th style={{ padding: '14px 20px', fontWeight: 'normal' }}>Client IP</th>
                                 <th style={{ padding: '14px 20px', fontWeight: 'normal' }}>Packet Count</th>
                                 <th style={{ padding: '14px 20px', fontWeight: 'normal' }}>AI Prediction Label</th>
                                 <th style={{ padding: '14px 20px', fontWeight: 'normal' }}>Destination / Websites</th>
@@ -187,7 +190,7 @@ export default function History() {
                         <tbody>
                             {currentItems.length === 0 ? (
                                 <tr>
-                                    <td colSpan="5" style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
+                                    <td colSpan="6" style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
                                         Không tìm thấy bản ghi nào.
                                     </td>
                                 </tr>
@@ -197,6 +200,19 @@ export default function History() {
                                         <td style={{ padding: '14px 20px', color: '#64748b' }}>#{item.id}</td>
                                         <td style={{ padding: '14px 20px', color: '#cbd5e1' }}>
                                             {new Date(item.log_timestamp).toLocaleString('vi-VN')}
+                                        </td>
+                                        <td style={{ padding: '14px 20px' }}>
+                                            <span style={{
+                                                fontFamily: 'monospace',
+                                                fontSize: '12px',
+                                                color: '#38bdf8',
+                                                background: 'rgba(56, 189, 248, 0.1)',
+                                                border: '1px solid rgba(56, 189, 248, 0.3)',
+                                                padding: '3px 8px',
+                                                borderRadius: '4px'
+                                            }}>
+                                                {item.client_ip || 'Local'}
+                                            </span>
                                         </td>
                                         <td style={{ padding: '14px 20px', color: '#f8fafc', fontWeight: 'bold' }}>{item.packet_count}</td>
                                         <td style={{ padding: '14px 20px' }}>

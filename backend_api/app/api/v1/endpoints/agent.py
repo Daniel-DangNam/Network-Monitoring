@@ -7,12 +7,22 @@ router = APIRouter()
 @router.post("/start-agent")
 def start_agent(payload: Optional[Dict[str, Any]] = Body(None)):
     duration = 30
-    if payload and "duration" in payload:
-        try:
-            duration = int(payload["duration"])
-        except (ValueError, TypeError):
-            duration = 30
-    return agent_service.start_agent(duration=duration)
+    interface = None
+    if payload:
+        if "duration" in payload:
+            try:
+                duration = int(payload["duration"])
+            except (ValueError, TypeError):
+                duration = 30
+        if "interface" in payload and payload["interface"]:
+            interface = str(payload["interface"]).strip()
+    return agent_service.start_agent(duration=duration, interface=interface)
+
+@router.get("/network-interfaces")
+def get_network_interfaces():
+    return {
+        "interfaces": agent_service.get_interfaces()
+    }
 
 @router.post("/stop-agent")
 def stop_agent():

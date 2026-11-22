@@ -4,6 +4,7 @@ from datetime import datetime
 
 class LogPayload(BaseModel):
     timestamp: Optional[str] = None
+    client_ip: Optional[str] = "Local"
     ai_prediction: str
     packet_count: int
     websites: List[str] = []
@@ -11,6 +12,7 @@ class LogPayload(BaseModel):
 class ClassificationRecord(BaseModel):
     id: int
     log_timestamp: datetime
+    client_ip: Optional[str] = "Local"
     ai_prediction: str
     packet_count: int
     websites: List[str] = []
@@ -24,6 +26,7 @@ class HistoryResponse(BaseModel):
 
 class RealtimeLogItem(BaseModel):
     id: int
+    client_ip: Optional[str] = "Local"
     ai_prediction: str
     packet_count: int
     websites: List[str]

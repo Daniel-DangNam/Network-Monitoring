@@ -13,7 +13,9 @@ class TrafficService:
 
     @staticmethod
     async def save_log(db: Session, payload: LogPayload) -> ClassificationHistory:
+        client_ip_val = (payload.client_ip or "Local").strip() or "Local"
         record = ClassificationHistory(
+            client_ip=client_ip_val,
             ai_prediction=payload.ai_prediction,
             packet_count=payload.packet_count,
             websites=payload.websites
@@ -24,6 +26,7 @@ class TrafficService:
 
         realtime_data = {
             "id": record.id,
+            "client_ip": record.client_ip or "Local",
             "ai_prediction": record.ai_prediction,
             "packet_count": record.packet_count,
             "websites": record.websites or [],
@@ -36,13 +39,14 @@ class TrafficService:
     def generate_csv_report(records: List[ClassificationHistory]) -> io.StringIO:
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(["ID", "Timestamp", "Packet Count", "AI Prediction Label", "Destination / Websites"])
+        writer.writerow(["ID", "Timestamp", "Client IP", "Packet Count", "AI Prediction Label", "Destination / Websites"])
 
         for record in records:
             websites_str = ", ".join(record.websites) if isinstance(record.websites, list) else str(record.websites or "")
             writer.writerow([
                 record.id,
                 str(record.log_timestamp),
+                record.client_ip or "Local",
                 record.packet_count,
                 record.ai_prediction,
                 websites_str

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Zap, Play, Square, Activity, Clock } from 'lucide-react';
+import { Zap, Play, Square, Wifi, Clock, RefreshCw } from 'lucide-react';
 
 export default function ControlPanel({ isConnected }) {
     // Khôi phục trạng thái từ localStorage để khi chuyển tab không bị reset giao diện
@@ -7,11 +7,31 @@ export default function ControlPanel({ isConnected }) {
         return localStorage.getItem('agent_is_listening') === 'true';
     });
     const [isLoading, setIsLoading] = useState(false);
-    const [adapterName, setAdapterName] = useState('auto (eth0/ens33)');
+    const [adapterName, setAdapterName] = useState('auto');
+    const [interfaces, setInterfaces] = useState([
+        { name: 'auto', label: 'Tự động (Auto Detect)', type: 'auto' }
+    ]);
+    const [selectedInterface, setSelectedInterface] = useState(() => {
+        return localStorage.getItem('agent_capture_interface') || 'auto';
+    });
     const [duration, setDuration] = useState(() => {
         const saved = localStorage.getItem('agent_capture_duration');
         return saved ? Number(saved) : 30;
     });
+
+    const fetchInterfaces = useCallback(async () => {
+        try {
+            const response = await fetch('http://localhost:8000/api/v1/network-interfaces');
+            if (response.ok) {
+                const data = await response.json();
+                if (Array.isArray(data.interfaces) && data.interfaces.length > 0) {
+                    setInterfaces(data.interfaces);
+                }
+            }
+        } catch {
+            // Backend chưa sẵn sàng
+        }
+    }, []);
 
     // Đồng bộ trạng thái Agent với Backend API
     const syncAgentStatus = useCallback(async () => {
@@ -34,11 +54,12 @@ export default function ControlPanel({ isConnected }) {
     useEffect(() => {
         // Đồng bộ ngay khi mount (chuyển từ tab khác sang)
         syncAgentStatus();
+        fetchInterfaces();
 
         // Định kỳ kiểm tra trạng thái mỗi 3 giây
         const intervalId = setInterval(syncAgentStatus, 3000);
         return () => clearInterval(intervalId);
-    }, [syncAgentStatus]);
+    }, [syncAgentStatus, fetchInterfaces]);
 
     // Hàm gọi API kích hoạt Network Agent
     const handleStart = async () => {
@@ -47,7 +68,7 @@ export default function ControlPanel({ isConnected }) {
             const response = await fetch('http://localhost:8000/api/v1/start-agent', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ duration: duration })
+                body: JSON.stringify({ duration: duration, interface: selectedInterface })
             });
             const data = await response.json();
             
@@ -148,7 +169,62 @@ export default function ControlPanel({ isConnected }) {
                 </div>
             </div>
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px', 
+                    background: '#0f172a', 
+                    padding: '8px 12px', 
+                    borderRadius: '8px', 
+                    border: '1px solid #1e293b' 
+                }}>
+                    <Wifi size={16} color="#38bdf8" />
+                    <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: '500' }}>Card:</span>
+                    <select 
+                        value={selectedInterface} 
+                        onChange={(e) => {
+                            const val = e.target.value;
+                            setSelectedInterface(val);
+                            localStorage.setItem('agent_capture_interface', val);
+                        }}
+                        disabled={isListening || isLoading}
+                        style={{
+                            background: '#1e293b',
+                            color: '#38bdf8',
+                            border: '1px solid #334155',
+                            borderRadius: '4px',
+                            padding: '3px 8px',
+                            fontSize: '13px',
+                            fontWeight: 'bold',
+                            outline: 'none',
+                            maxWidth: '185px',
+                            cursor: (isListening || isLoading) ? 'not-allowed' : 'pointer'
+                        }}
+                    >
+                        {interfaces.map((iface) => (
+                            <option key={iface.name} value={iface.name}>{iface.label}</option>
+                        ))}
+                    </select>
+                    <button
+                        type="button"
+                        onClick={fetchInterfaces}
+                        disabled={isListening || isLoading}
+                        title="Làm mới danh sách card mạng"
+                        style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#94a3b8',
+                            cursor: (isListening || isLoading) ? 'not-allowed' : 'pointer',
+                            padding: '2px',
+                            display: 'flex',
+                            alignItems: 'center'
+                        }}
+                    >
+                        <RefreshCw size={14} />
+                    </button>
+                </div>
+
                 <div style={{ 
                     display: 'flex', 
                     alignItems: 'center', 

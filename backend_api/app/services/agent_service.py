@@ -9,6 +9,57 @@ class AgentService:
     def __init__(self):
         self._process = None
         self._current_duration = 30
+        self._current_interface = os.getenv("NETWORK_INTERFACE", "").strip() or "auto"
+
+    def get_interfaces(self) -> list[dict]:
+        """Liệt kê các card mạng khả dụng trên hệ thống (hỗ trợ Linux/Ubuntu và Windows)."""
+        interfaces = [{"name": "auto", "label": "Tự động (Auto Detect)", "type": "auto"}]
+
+        if platform.system() != "Windows":
+            default_iface = None
+            try:
+                out = subprocess.check_output(["ip", "route", "show", "default"], text=True, timeout=2)
+                parts = out.strip().split()
+                if "dev" in parts:
+                    default_iface = parts[parts.index("dev") + 1]
+            except Exception:
+                pass
+
+            try:
+                net_dir = "/sys/class/net"
+                if os.path.exists(net_dir):
+                    for name in sorted(os.listdir(net_dir)):
+                        if name == "lo":
+                            continue
+                        is_wifi = name.startswith(("wl", "wlan")) or os.path.exists(os.path.join(net_dir, name, "wireless"))
+                        tags = []
+                        if is_wifi:
+                            tags.append("Wi-Fi / Hotspot")
+                        if name == default_iface:
+                            tags.append("Default")
+                        suffix = f" ({', '.join(tags)})" if tags else ""
+                        interfaces.append({
+                            "name": name,
+                            "label": f"{name}{suffix}",
+                            "type": "wifi" if is_wifi else "ethernet"
+                        })
+            except Exception:
+                pass
+
+            interfaces.append({"name": "any", "label": "any (Tất cả card mạng)", "type": "any"})
+        else:
+            try:
+                out = subprocess.check_output(["netsh", "interface", "show", "interface"], text=True, timeout=2, errors="ignore")
+                for line in out.splitlines():
+                    if "Connected" in line or "Disconnected" in line:
+                        parts = line.split()
+                        if len(parts) >= 4:
+                            iface_name = " ".join(parts[3:])
+                            interfaces.append({"name": iface_name, "label": iface_name, "type": "adapter"})
+            except Exception:
+                pass
+
+        return interfaces
 
     def is_running(self) -> bool:
         if self._process is not None and self._process.poll() is None:
@@ -32,9 +83,7 @@ class AgentService:
 
     def get_status(self) -> dict:
         running = self.is_running()
-        iface = os.getenv("NETWORK_INTERFACE", "auto (eth0/ens33)").strip()
-        if not iface:
-            iface = "auto (eth0/ens33)"
+        iface = getattr(self, "_current_interface", None) or os.getenv("NETWORK_INTERFACE", "auto").strip() or "auto"
         return {
             "is_running": running,
             "pid": self._process.pid if (self._process and self._process.poll() is None) else None,
@@ -42,11 +91,13 @@ class AgentService:
             "duration": getattr(self, "_current_duration", 30)
         }
 
-    def start_agent(self, duration: int = 30) -> dict:
+    def start_agent(self, duration: int = 30, interface: str | None = None) -> dict:
         if self.is_running():
             return {"status": "info", "message": "Network Agent đang chạy rồi!"}
 
         self._current_duration = max(5, int(duration))
+        chosen_iface = (interface or "").strip()
+        self._current_interface = chosen_iface if chosen_iface else "auto"
 
         # Tự động xác định đường dẫn Python và script (hỗ trợ venv trên Ubuntu/Linux và Windows)
         current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -86,7 +137,9 @@ class AgentService:
 
             env = os.environ.copy()
             env["CAPTURE_DURATION"] = str(self._current_duration)
-            if not env.get("NETWORK_INTERFACE"):
+            if self._current_interface and self._current_interface != "auto":
+                env["NETWORK_INTERFACE"] = self._current_interface
+            elif not env.get("NETWORK_INTERFACE"):
                 if platform.system() != "Windows":
                     try:
                         out = subprocess.check_output(["ip", "route", "show", "default"], text=True, timeout=2)

@@ -7,6 +7,7 @@ class ClassificationHistory(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     log_timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    client_ip = Column(String, default="Local", index=True)
     ai_prediction = Column(String, index=True)
     packet_count = Column(Integer, default=0)
     websites = Column(JSON, default=list)

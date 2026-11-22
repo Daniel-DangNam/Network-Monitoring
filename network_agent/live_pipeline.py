@@ -9,12 +9,14 @@ import queue
 import requests
 import signal
 import sys
+import socket
+import ipaddress
 from datetime import datetime
-from collections import Counter
+from collections import Counter, defaultdict
 from scapy.utils import PcapReader
 
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
-from scapy.all import sniff, wrpcap, DNSQR, DNSRR, conf
+from scapy.all import sniff, wrpcap, DNSQR, DNSRR, IP, conf
 try:
     from scapy.layers.tls.all import TLS_Ext_ServerName
 except Exception:
@@ -28,8 +30,8 @@ pcap_queue = queue.Queue()
 is_running = True
 print_lock = threading.Lock() 
 
-# BIẾN TOÀN CỤC DUY TRÌ TRẠNG THÁI TÊN MIỀN
-last_active_domain = "Unknown"
+# DUY TRÌ TRẠNG THÁI TÊN MIỀN RIÊNG BIỆT THEO TỪNG CLIENT IP
+last_domain_by_client: dict[str, str] = {}
 
 ## ========================================================
 # TẠO FOLDER LƯU TRỮ DỮ LIỆU ĐÁNH GIÁ (DATASETS)
@@ -82,9 +84,9 @@ signal.signal(signal.SIGINT, shutdown_handler)
 signal.signal(signal.SIGTERM, shutdown_handler)
 
 def detect_active_interface():
-    # 1. Biến môi trường
+    # 1. Biến môi trường (hỗ trợ 'any' hoặc tên card cụ thể như wlan0, ens33)
     env_iface = os.getenv("NETWORK_INTERFACE", "").strip()
-    if env_iface:
+    if env_iface and env_iface.lower() != "auto":
         return env_iface
         
     # 2. Dò tìm card mạng default gateway trên Linux qua lệnh 'ip route'
@@ -105,6 +107,76 @@ def detect_active_interface():
     if c_iface and str(c_iface) != 'lo':
         return str(c_iface)
 
+    return None
+
+def get_local_host_ips() -> set[str]:
+    """Lấy toàn bộ địa chỉ IPv4 thuộc về máy chủ Gateway/VM hiện tại."""
+    local_ips = {"127.0.0.1"}
+    if sys.platform != "win32":
+        try:
+            import subprocess
+            out = subprocess.check_output(["hostname", "-I"], text=True, timeout=2)
+            for token in out.strip().split():
+                if "." in token:
+                    local_ips.add(token.strip())
+        except Exception:
+            pass
+    else:
+        try:
+            _, _, ip_list = socket.gethostbyname_ex(socket.gethostname())
+            local_ips.update(ip_list)
+        except Exception:
+            pass
+    return local_ips
+
+def _is_ignored_ip(ip_str: str) -> bool:
+    try:
+        ip_obj = ipaddress.ip_address(ip_str)
+        return (
+            ip_obj.is_loopback
+            or ip_obj.is_multicast
+            or ip_obj.is_unspecified
+            or ip_obj.is_link_local
+            or ip_str == "255.255.255.255"
+        )
+    except ValueError:
+        return True
+
+def _is_private_ip(ip_str: str) -> bool:
+    try:
+        return ipaddress.ip_address(ip_str).is_private
+    except ValueError:
+        return False
+
+def identify_client_ip(pkt, local_ips: set[str]) -> str | None:
+    """
+    Xác định IP của thiết bị đầu cuối (Client Device) trong mạng Wi-Fi / LAN.
+    Ưu tiên IP nội bộ của máy khác kết nối qua Hotspot/Module Wi-Fi.
+    """
+    if not pkt.haslayer(IP):
+        return None
+    src_ip = pkt[IP].src
+    dst_ip = pkt[IP].dst
+
+    if _is_ignored_ip(src_ip) or _is_ignored_ip(dst_ip):
+        return None
+
+    # 1. Thiết bị khách (Điện thoại/Laptop khác) kết nối qua Wi-Fi Hotspot
+    if _is_private_ip(src_ip) and src_ip not in local_ips:
+        return src_ip
+    if _is_private_ip(dst_ip) and dst_ip not in local_ips:
+        return dst_ip
+
+    # 2. Lưu lượng của chính máy trạm/VM hiện tại
+    if src_ip in local_ips:
+        return src_ip
+    if dst_ip in local_ips:
+        return dst_ip
+
+    if _is_private_ip(src_ip):
+        return src_ip
+    if _is_private_ip(dst_ip):
+        return dst_ip
     return None
 
 def capture_traffic_loop(duration=30):
@@ -146,74 +218,108 @@ def capture_traffic_loop(duration=30):
         except Exception as e:
             if is_running: safe_print(f"Lỗi ở luồng bắt gói tin: {e}")
 
+def _run_cicflowmeter(pcap_path: str, csv_out_path: str) -> bool:
+    """Chạy CICFlowMeter trên một file PCAP và xuất ra CSV."""
+    try:
+        sniffer_obj, session = create_sniffer(
+            input_file=pcap_path, input_interface=None, output_mode="csv",
+            output=csv_out_path, input_directory=None, fields=None, verbose=False
+        )
+        sniffer_obj.start()
+        sniffer_obj.join()
+
+        if hasattr(session, '_gc_stop'):
+            session._gc_stop.set()
+            session._gc_thread.join(timeout=2.0)
+        session.flush_flows()
+        return os.path.exists(csv_out_path)
+    except Exception as e:
+        safe_print(f"-> [Lỗi Lõi CIC] Bỏ qua file do lỗi dịch: {e}")
+        return False
+
 def process_data_loop(model):
-    global is_running, last_active_domain
+    global is_running, last_domain_by_client
+    local_ips = get_local_host_ips()
+
     while is_running:
         try:
             queue_item = pcap_queue.get(timeout=5)
             pcap_filename, pkt_count = queue_item
-            csv_filename = pcap_filename.replace('.pcap', '.csv')
-            
             abs_pcap = os.path.abspath(pcap_filename)
-            abs_csv_out = os.path.abspath(csv_filename)
-            
+
             try:
-                sniffer_obj, session = create_sniffer(
-                    input_file=abs_pcap, input_interface=None, output_mode="csv",
-                    output=abs_csv_out, input_directory=None, fields=None, verbose=False
-                )
-                sniffer_obj.start()
-                sniffer_obj.join()
-                
-                if hasattr(session, '_gc_stop'):
-                    session._gc_stop.set()
-                    session._gc_thread.join(timeout=2.0)
-                session.flush_flows()
-                cic_success = True
-            except Exception as e:
-                safe_print(f"-> [Lỗi Lõi CIC] Bỏ qua file do lỗi dịch: {e}")
-                cic_success = False
-            
-            if cic_success and os.path.exists(abs_csv_out):
-                visited_websites = extract_domains(abs_pcap)
-                prediction_result = analyze_with_ai(model, abs_csv_out, visited_websites)
-                
-                # NẾU TRỌNG TÀI BÁO LÀ VPN HOẶC RÁC -> CHẶN KHÔNG ĐẨY LÊN WEB
-                if prediction_result == "IGNORED":
-                    safe_print(f"🛡️ [ANTI-VPN] Đã chặn luồng ẩn danh/VPN/Rác (Domain: {visited_websites}). (Không đẩy lên Dashboard)")
+                # Tách gói tin theo từng địa chỉ IP thiết bị khách (Multi-Device Isolation)
+                client_buckets = defaultdict(list)
+                with PcapReader(abs_pcap) as pcap_reader:
+                    for pkt in pcap_reader:
+                        c_ip = identify_client_ip(pkt, local_ips)
+                        if c_ip:
+                            client_buckets[c_ip].append(pkt)
+
+                if not client_buckets:
+                    safe_print("-> [Bộ Lọc] Không có gói tin IP hợp lệ trong chu kỳ này.")
                 else:
-                    # Đồng bộ tên miền hiển thị cho Web/WebSocket
-                    display_websites = visited_websites if visited_websites else ([last_active_domain] if last_active_domain != "Unknown" else [])
-                    
-                    log_data = {
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "ai_prediction": prediction_result,
-                        "packet_count": pkt_count,
-                        "websites": display_websites
-                    }
-                    
-                    safe_print("\n" + "="*60)
-                    safe_print(f"🟢 [BACKEND READY] DỮ LIỆU JSON (GÓI {pkt_count} PACKETS):")
-                    safe_print(json.dumps(log_data, indent=4, ensure_ascii=False))
-                    safe_print("="*60)
+                    safe_print(f"📡 [Multi-Device] Phát hiện {len(client_buckets)} thiết bị hoạt động: {list(client_buckets.keys())}")
+
+                for client_ip, client_pkts in client_buckets.items():
+                    c_pkt_count = len(client_pkts)
+                    if c_pkt_count < 5:
+                        continue
+
+                    safe_ip = client_ip.replace(":", "_").replace(".", "_")
+                    client_pcap = f"{abs_pcap}.{safe_ip}.pcap"
+                    client_csv = f"{abs_pcap}.{safe_ip}.csv"
 
                     try:
-                        requests.post(BACKEND_URL, json=log_data, timeout=3)
-                    except Exception as err:
-                        safe_print(f"-> [Cảnh báo Web] Chưa thể đẩy dữ liệu lên Backend: {err}")
-            
-            if os.path.exists(abs_pcap): os.remove(abs_pcap)
-            if os.path.exists(abs_csv_out): os.remove(abs_csv_out)
-            
-            pcap_queue.task_done()
-            
-        except queue.Empty:
-            continue 
-        except Exception as e:
-            if is_running: safe_print(f"-> [Cảnh báo Luồng Xử Lý] Xảy ra lỗi ngoài ý muốn: {e}")
+                        wrpcap(client_pcap, client_pkts)
+                        if not _run_cicflowmeter(client_pcap, client_csv):
+                            continue
 
-def analyze_with_ai(model, csv_filename, visited_websites):
-    global last_active_domain
+                        visited_websites = extract_domains_from_packets(client_pkts)
+                        prediction_result = analyze_with_ai(model, client_csv, visited_websites, client_ip)
+
+                        if prediction_result == "IGNORED":
+                            safe_print(f"🛡️ [ANTI-VPN] ({client_ip}) Đã chặn luồng ẩn danh/VPN/Rác (Domain: {visited_websites}).")
+                            continue
+
+                        prev_domain = last_domain_by_client.get(client_ip, "Unknown")
+                        display_websites = visited_websites if visited_websites else ([prev_domain] if prev_domain != "Unknown" else [])
+
+                        log_data = {
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "client_ip": client_ip,
+                            "ai_prediction": prediction_result,
+                            "packet_count": c_pkt_count,
+                            "websites": display_websites
+                        }
+
+                        safe_print("\n" + "="*60)
+                        safe_print(f"🟢 [BACKEND READY] THIẾT BỊ {client_ip} ({c_pkt_count} PACKETS):")
+                        safe_print(json.dumps(log_data, indent=4, ensure_ascii=False))
+                        safe_print("="*60)
+
+                        try:
+                            requests.post(BACKEND_URL, json=log_data, timeout=3)
+                        except Exception as err:
+                            safe_print(f"-> [Cảnh báo Web] Chưa thể đẩy dữ liệu lên Backend: {err}")
+                    finally:
+                        if os.path.exists(client_pcap):
+                            os.remove(client_pcap)
+                        if os.path.exists(client_csv):
+                            os.remove(client_csv)
+            finally:
+                if os.path.exists(abs_pcap):
+                    os.remove(abs_pcap)
+                pcap_queue.task_done()
+
+        except queue.Empty:
+            continue
+        except Exception as e:
+            if is_running:
+                safe_print(f"-> [Cảnh báo Luồng Xử Lý] Xảy ra lỗi ngoài ý muốn: {e}")
+
+def analyze_with_ai(model, csv_filename, visited_websites, client_ip="Local"):
+    global last_domain_by_client
     try:
         df = pd.read_csv(csv_filename)
         df = df.replace([np.inf, -np.inf], np.nan).dropna()
@@ -230,12 +336,12 @@ def analyze_with_ai(model, csv_filename, visited_websites):
         predictions = []
         valid_features = []
         
-        # Duy trì trạng thái tên miền liên tục
+        # Duy trì trạng thái tên miền riêng cho từng thiết bị (Client IP)
         if visited_websites and visited_websites[0] != "Unknown":
             primary_domain = visited_websites[0]
-            last_active_domain = primary_domain
+            last_domain_by_client[client_ip] = primary_domain
         else:
-            primary_domain = last_active_domain
+            primary_domain = last_domain_by_client.get(client_ip, "Unknown")
         
         for index, row in df_numeric.iterrows():
             try:
@@ -262,23 +368,24 @@ def analyze_with_ai(model, csv_filename, visited_websites):
         if not predictions: return "IGNORED"
         
         export_df = pd.DataFrame(valid_features, columns=df_ordered.columns)
+        export_df['Client_IP'] = client_ip
         export_df['Destination / Websites'] = primary_domain
         export_df['AI_Prediction'] = predictions
         
         write_header = not os.path.exists(CSV_OUT_PATH)
         export_df.to_csv(CSV_OUT_PATH, mode='a', header=write_header, index=False)
-        safe_print(f"💾 [DATASET] Đã trích xuất và lưu {len(predictions)} luồng hợp lệ vào {CSV_OUT_PATH}")
+        safe_print(f"💾 [DATASET] ({client_ip}) Đã lưu {len(predictions)} luồng hợp lệ vào {CSV_OUT_PATH}")
         
         label_counts = Counter(predictions)
         most_common_label = label_counts.most_common(1)[0][0]
         
-        safe_print(f"🤖 [AI-FUSION] Hành vi chốt hạ: {most_common_label} (Chi tiết: {dict(label_counts)})")
+        safe_print(f"🤖 [AI-FUSION] ({client_ip}) Hành vi chốt hạ: {most_common_label} (Chi tiết: {dict(label_counts)})")
         return most_common_label
     except Exception as e:
-        safe_print(f"[AI] Lỗi phân tích: {e}")
+        safe_print(f"[AI] Lỗi phân tích ({client_ip}): {e}")
         return "IGNORED"
 
-def extract_domains(pcap_filename):
+def extract_domains_from_packets(packets):
     tls_domains = []
     dns_domains = []
     
@@ -317,36 +424,35 @@ def extract_domains(pcap_filename):
         'youtube', 'googlevideo', 'ytimg', 'video.xx.fbcdn', 
         'nflxvideo', 'netflix', 'vimeocdn', 'ttvnw'
     ]
-    # LƯU Ý: ĐÃ XÓA TỪ KHÓA VPN TRONG PRIORITY ĐỂ AI KHÔNG BỊ PHÂN TÂM
 
-    try:
-        with PcapReader(pcap_filename) as pcap_reader:
-            for pkt in pcap_reader:
-                if TLS_Ext_ServerName and pkt.haslayer(TLS_Ext_ServerName):
-                    try:
-                        server_names = pkt[TLS_Ext_ServerName].servernames
-                        if server_names: 
-                            sni_name = server_names[0].servername.decode('utf-8').lower()
-                            if not any(junk in sni_name for junk in BLACKLIST_KEYWORDS) and '.' in sni_name:
-                                tls_domains.append(sni_name)
-                    except: pass
-                
-                elif pkt.haslayer(DNSQR):
-                    try:
-                        qname = pkt[DNSQR].qname.decode('utf-8').strip('.').lower()
-                        if not qname.endswith('.local') and not qname.endswith('.arpa') and '.' in qname:
-                            if not any(junk in qname for junk in BLACKLIST_KEYWORDS):
-                                dns_domains.append(qname)
-                    except: pass
+    for pkt in packets:
+        if TLS_Ext_ServerName and pkt.haslayer(TLS_Ext_ServerName):
+            try:
+                server_names = pkt[TLS_Ext_ServerName].servernames
+                if server_names: 
+                    sni_name = server_names[0].servername.decode('utf-8').lower()
+                    if not any(junk in sni_name for junk in BLACKLIST_KEYWORDS) and '.' in sni_name:
+                        tls_domains.append(sni_name)
+            except Exception:
+                pass
+        
+        elif pkt.haslayer(DNSQR):
+            try:
+                qname = pkt[DNSQR].qname.decode('utf-8').strip('.').lower()
+                if not qname.endswith('.local') and not qname.endswith('.arpa') and '.' in qname:
+                    if not any(junk in qname for junk in BLACKLIST_KEYWORDS):
+                        dns_domains.append(qname)
+            except Exception:
+                pass
 
-                elif pkt.haslayer(DNSRR):
-                    try:
-                        rrname = pkt[DNSRR].rrname.decode('utf-8').strip('.').lower()
-                        if not rrname.endswith('.local') and not rrname.endswith('.arpa') and '.' in rrname:
-                            if not any(junk in rrname for junk in BLACKLIST_KEYWORDS):
-                                dns_domains.append(rrname)
-                    except: pass
-    except: pass
+        elif pkt.haslayer(DNSRR):
+            try:
+                rrname = pkt[DNSRR].rrname.decode('utf-8').strip('.').lower()
+                if not rrname.endswith('.local') and not rrname.endswith('.arpa') and '.' in rrname:
+                    if not any(junk in rrname for junk in BLACKLIST_KEYWORDS):
+                        dns_domains.append(rrname)
+            except Exception:
+                pass
     
     def get_best_domain(domain_list):
         if not domain_list: return None
@@ -367,6 +473,13 @@ def extract_domains(pcap_filename):
         return [best_dns]
         
     return []
+
+def extract_domains(pcap_filename):
+    try:
+        with PcapReader(pcap_filename) as pcap_reader:
+            return extract_domains_from_packets(pcap_reader)
+    except Exception:
+        return []
 
 def main():
     global is_running

@@ -197,6 +197,7 @@ export default function Dashboard() {
                     <thead>
                         <tr style={{ background: 'rgba(15, 23, 42, 0.6)', color: '#94a3b8' }}>
                             <th style={{ padding: '12px 20px', fontWeight: 'normal' }}>Timestamp</th>
+                            <th style={{ padding: '12px 20px', fontWeight: 'normal' }}>Client IP (Thiết bị)</th>
                             <th style={{ padding: '12px 20px', fontWeight: 'normal' }}>Packet Count</th>
                             <th style={{ padding: '12px 20px', fontWeight: 'normal' }}>AI Prediction Label</th>
                             <th style={{ padding: '12px 20px', fontWeight: 'normal' }}>Destination / Websites</th>
@@ -204,12 +205,25 @@ export default function Dashboard() {
                     </thead>
                     <tbody>
                         {logs.length === 0 ? (
-                            <tr><td colSpan="4" style={{ textAlign: 'center', padding: '30px', color: '#64748b' }}>Đang chờ luồng dữ liệu...</td></tr>
+                            <tr><td colSpan="5" style={{ textAlign: 'center', padding: '30px', color: '#64748b' }}>Đang chờ luồng dữ liệu...</td></tr>
                         ) : (
                             logs.slice(0, 10).map((log, index) => (
                                 <tr key={index} style={{ borderBottom: '1px solid #1e293b', background: index % 2 === 0 ? 'transparent' : 'rgba(15, 23, 42, 0.3)' }}>
                                     <td style={{ padding: '14px 20px', color: '#cbd5e1' }}>
                                         {new Date(log.timestamp).toLocaleTimeString() !== "Invalid Date" ? log.timestamp.substring(0, 23) : log.timestamp}
+                                    </td>
+                                    <td style={{ padding: '14px 20px' }}>
+                                        <span style={{
+                                            fontFamily: 'monospace',
+                                            fontSize: '12px',
+                                            color: '#38bdf8',
+                                            background: 'rgba(56, 189, 248, 0.1)',
+                                            border: '1px solid rgba(56, 189, 248, 0.3)',
+                                            padding: '3px 8px',
+                                            borderRadius: '4px'
+                                        }}>
+                                            {log.client_ip || 'Local'}
+                                        </span>
                                     </td>
                                     <td style={{ padding: '14px 20px', color: '#f8fafc' }}>{log.packet_count}</td>
                                     <td style={{ padding: '14px 20px' }}>
