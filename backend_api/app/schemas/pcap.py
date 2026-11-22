@@ -9,6 +9,9 @@ class PcapSummaryResponse(BaseModel):
     src_ip: str
     dst_ip: str
     protocol: str
+    summary_label: str = "Unknown"
     predicted_labels: List[str] = []
+    websites: List[str] = []
+    client_ips: List[str] = []
     error: Optional[str] = None
 

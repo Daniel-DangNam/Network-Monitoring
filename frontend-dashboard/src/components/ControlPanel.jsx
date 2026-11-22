@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Zap, Play, Square, Wifi, Clock, RefreshCw } from 'lucide-react';
+import { API_URL } from '../services/api';
 
 export default function ControlPanel({ isConnected }) {
     // Khôi phục trạng thái từ localStorage để khi chuyển tab không bị reset giao diện
@@ -21,7 +22,7 @@ export default function ControlPanel({ isConnected }) {
 
     const fetchInterfaces = useCallback(async () => {
         try {
-            const response = await fetch('http://localhost:8000/api/v1/network-interfaces');
+            const response = await fetch(`${API_URL}/network-interfaces`);
             if (response.ok) {
                 const data = await response.json();
                 if (Array.isArray(data.interfaces) && data.interfaces.length > 0) {
@@ -36,7 +37,7 @@ export default function ControlPanel({ isConnected }) {
     // Đồng bộ trạng thái Agent với Backend API
     const syncAgentStatus = useCallback(async () => {
         try {
-            const response = await fetch('http://localhost:8000/api/v1/agent-status');
+            const response = await fetch(`${API_URL}/agent-status`);
             if (response.ok) {
                 const data = await response.json();
                 const running = Boolean(data.is_running);
@@ -52,20 +53,24 @@ export default function ControlPanel({ isConnected }) {
     }, []);
 
     useEffect(() => {
-        // Đồng bộ ngay khi mount (chuyển từ tab khác sang)
-        syncAgentStatus();
-        fetchInterfaces();
+        // Đồng bộ ngay khi mount và định kỳ mỗi 3 giây
+        const initTimeout = setTimeout(() => {
+            syncAgentStatus();
+            fetchInterfaces();
+        }, 0);
 
-        // Định kỳ kiểm tra trạng thái mỗi 3 giây
         const intervalId = setInterval(syncAgentStatus, 3000);
-        return () => clearInterval(intervalId);
+        return () => {
+            clearTimeout(initTimeout);
+            clearInterval(intervalId);
+        };
     }, [syncAgentStatus, fetchInterfaces]);
 
     // Hàm gọi API kích hoạt Network Agent
     const handleStart = async () => {
         setIsLoading(true);
         try {
-            const response = await fetch('http://localhost:8000/api/v1/start-agent', {
+            const response = await fetch(`${API_URL}/start-agent`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ duration: duration, interface: selectedInterface })
@@ -92,7 +97,7 @@ export default function ControlPanel({ isConnected }) {
     const handleStop = async () => {
         setIsLoading(true);
         try {
-            const response = await fetch('http://localhost:8000/api/v1/stop-agent', {
+            const response = await fetch(`${API_URL}/stop-agent`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             });

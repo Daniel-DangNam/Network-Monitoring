@@ -2,16 +2,8 @@ import { useState, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import ControlPanel from '../components/ControlPanel';
 import { Activity, Target, FileText } from 'lucide-react';
-
-// Bảng màu cho các nhãn AI Prediction
-const PREDICTION_COLORS = {
-    'Normal': '#22c55e',      // Xanh lá
-    'Streaming': '#3b82f6',   // Xanh dương
-    'VoIP': '#eab308',        // Vàng cam
-    'Malicious': '#ef4444',   // Đỏ
-    'Anomaly': '#ef4444',     // Đỏ
-    'Default': '#8b5cf6'      // Tím (Các nhãn khác)
-};
+import { API_URL, WS_URL } from '../services/api';
+import { getPredictionColor, formatPredictionLabel, getBadgeStyle } from '../utils/predictionColors';
 
 export default function Dashboard() {
     const [logs, setLogs] = useState([]);
@@ -21,7 +13,7 @@ export default function Dashboard() {
         const fetchInitialData = async () => {
             try {
                 const token = localStorage.getItem('token');
-                const res = await fetch('http://localhost:8000/api/v1/history', {
+                const res = await fetch(`${API_URL}/history`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const responseData = await res.json();
@@ -43,7 +35,7 @@ export default function Dashboard() {
         let reconnectTimeout = null;
 
         const connectWebSocket = () => {
-            ws = new WebSocket('ws://localhost:8000/ws/realtime');
+            ws = new WebSocket(WS_URL);
             ws.onopen = () => setIsConnected(true);
             ws.onmessage = (event) => {
                 const newData = JSON.parse(event.data);
@@ -78,32 +70,18 @@ export default function Dashboard() {
 
     // Xử lý dữ liệu biểu đồ Donut[cite: 16]
     const pieDataRaw = logs.reduce((acc, log) => {
-        acc[log.ai_prediction] = (acc[log.ai_prediction] || 0) + 1;
+        const displayLabel = formatPredictionLabel(log.ai_prediction);
+        acc[displayLabel] = (acc[displayLabel] || 0) + 1;
         return acc;
     }, {});
     
     const pieData = Object.keys(pieDataRaw).map(key => ({
         name: key,
         value: pieDataRaw[key],
-        color: PREDICTION_COLORS[key] || PREDICTION_COLORS['Default']
+        color: getPredictionColor(key)
     }));
 
     const totalLogs = logs.length;
-
-    // Hàm lấy màu cho Badge dựa trên tên nhãn
-    const getBadgeStyle = (label) => {
-        const color = PREDICTION_COLORS[label] || PREDICTION_COLORS['Default'];
-        return {
-            color: color,
-            border: `1px solid ${color}`,
-            background: `${color}15`, // Thêm độ trong suốt cho background
-            padding: '4px 10px',
-            borderRadius: '4px',
-            fontSize: '12px',
-            fontWeight: 'bold',
-            display: 'inline-block'
-        };
-    };
 
     return (
         <div style={{ padding: '24px', background: '#050b14', minHeight: '100vh', color: '#e2e8f0' }}>
@@ -228,7 +206,7 @@ export default function Dashboard() {
                                     <td style={{ padding: '14px 20px', color: '#f8fafc' }}>{log.packet_count}</td>
                                     <td style={{ padding: '14px 20px' }}>
                                         <span style={getBadgeStyle(log.ai_prediction)}>
-                                            {log.ai_prediction}
+                                            {formatPredictionLabel(log.ai_prediction)}
                                         </span>
                                     </td>
                                     <td style={{ padding: '14px 20px', color: '#94a3b8' }}>

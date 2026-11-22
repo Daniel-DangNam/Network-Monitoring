@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { UploadCloud, FileCode, CheckCircle, AlertTriangle } from 'lucide-react';
+import { UploadCloud, CheckCircle, AlertTriangle, Cpu, Globe } from 'lucide-react';
+import { API_URL } from '../services/api';
+import { getBadgeStyle, formatPredictionLabel } from '../utils/predictionColors';
 
 export default function PcapAnalysis() {
     const [file, setFile] = useState(null);
@@ -24,7 +26,7 @@ export default function PcapAnalysis() {
         formData.append('file', file);
 
         try {
-            const res = await fetch('http://localhost:8000/api/v1/pcap/upload', {
+            const res = await fetch(`${API_URL}/pcap/upload`, {
                 method: 'POST',
                 body: formData
             });
@@ -180,13 +182,38 @@ export default function PcapAnalysis() {
                         </div>
                     </div>
 
-                    <div style={{ background: '#0f172a', padding: '16px', borderRadius: '8px', border: '1px solid #1e293b' }}>
-                        <h4 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '8px', color: '#94a3b8' }}>
-                            Thông tin luồng tiêu biểu:
-                        </h4>
-                        <p style={{ margin: '4px 0', fontSize: '13px' }}>
-                            <strong>IP Nguồn:</strong> {result.src_ip} &rarr; <strong>IP Đích:</strong> {result.dst_ip}
-                        </p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
+                        <div style={{ background: '#0f172a', padding: '16px', borderRadius: '8px', border: '1px solid #1e293b' }}>
+                            <h4 style={{ fontSize: '13px', fontWeight: 'bold', marginBottom: '10px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <Cpu size={15} color="#38bdf8" /> Kết quả phân loại AI-Fusion:
+                            </h4>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                {(result.predicted_labels && result.predicted_labels.length > 0) ? (
+                                    result.predicted_labels.map((lbl, idx) => (
+                                        <span key={idx} style={getBadgeStyle(lbl)}>{formatPredictionLabel(lbl)}</span>
+                                    ))
+                                ) : (
+                                    <span style={getBadgeStyle(result.summary_label)}>{formatPredictionLabel(result.summary_label)}</span>
+                                )}
+                            </div>
+                        </div>
+
+                        <div style={{ background: '#0f172a', padding: '16px', borderRadius: '8px', border: '1px solid #1e293b' }}>
+                            <h4 style={{ fontSize: '13px', fontWeight: 'bold', marginBottom: '10px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <Globe size={15} color="#22c55e" /> Tên miền & Thiết bị phát hiện:
+                            </h4>
+                            <p style={{ margin: '4px 0', fontSize: '13px', color: '#cbd5e1' }}>
+                                <strong>Website/SNI:</strong> {(result.websites && result.websites.length > 0) ? result.websites.join(', ') : 'Không phát hiện tên miền'}
+                            </p>
+                            <p style={{ margin: '4px 0', fontSize: '13px', color: '#cbd5e1' }}>
+                                <strong>Luồng tiêu biểu:</strong> {result.src_ip} &rarr; {result.dst_ip}
+                            </p>
+                            {result.client_ips && result.client_ips.length > 0 && (
+                                <p style={{ margin: '4px 0', fontSize: '12px', color: '#38bdf8', fontFamily: 'monospace' }}>
+                                    Client IP: {result.client_ips.join(', ')}
+                                </p>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}

@@ -1,22 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { getHistoryLogs } from '../services/api';
-import { Database, Filter, Download, FileText } from 'lucide-react';
+import { Database, Filter, Download, FileText, Search, RotateCcw } from 'lucide-react';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
-
-// Bảng màu chuẩn hóa cho các nhãn AI
-const PREDICTION_COLORS = {
-    'Normal': '#22c55e',      // Xanh lá
-    'Streaming': '#3b82f6',   // Xanh dương
-    'VoIP': '#eab308',        // Vàng cam
-    'Malicious': '#ef4444',   // Đỏ
-    'Anomaly': '#ef4444',     // Đỏ
-    'Default': '#8b5cf6'      // Tím
-};
+import { getBadgeStyle, formatPredictionLabel } from '../utils/predictionColors';
 
 export default function History() {
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [selectedLabel, setSelectedLabel] = useState('ALL');
+    const [selectedIp, setSelectedIp] = useState('ALL');
+    const [searchText, setSearchText] = useState('');
     
     // Các State phục vụ phân trang
     const [currentPage, setCurrentPage] = useState(1);
@@ -37,20 +31,40 @@ export default function History() {
         fetchHistory();
     }, []);
 
+    const uniqueLabels = useMemo(() => {
+        const set = new Set(history.map(item => formatPredictionLabel(item.ai_prediction)));
+        return ['ALL', ...Array.from(set)];
+    }, [history]);
+
+    const uniqueIps = useMemo(() => {
+        const set = new Set(history.map(item => item.client_ip || 'Local'));
+        return ['ALL', ...Array.from(set)];
+    }, [history]);
+
+    const filteredHistory = useMemo(() => {
+        return history.filter(item => {
+            const labelMatch = selectedLabel === 'ALL' || formatPredictionLabel(item.ai_prediction) === selectedLabel;
+            const ipMatch = selectedIp === 'ALL' || (item.client_ip || 'Local') === selectedIp;
+            const websitesStr = Array.isArray(item.websites) ? item.websites.join(', ') : (item.websites || '');
+            const searchMatch = !searchText.trim() || websitesStr.toLowerCase().includes(searchText.trim().toLowerCase()) || (item.client_ip || '').toLowerCase().includes(searchText.trim().toLowerCase());
+            return labelMatch && ipMatch && searchMatch;
+        });
+    }, [history, selectedLabel, selectedIp, searchText]);
+
     // ----------------------------------------------------
     // HÀM XUẤT FILE CSV TRỰC TIẾP TỪ STATE FRONTEND
     // ----------------------------------------------------
     const exportToCSV = () => {
-        if (history.length === 0) return alert("Không có dữ liệu để xuất!");
+        if (filteredHistory.length === 0) return alert("Không có dữ liệu để xuất!");
         
         const headers = ['ID', 'Timestamp', 'Client IP', 'Packet Count', 'AI Prediction Label', 'Destination / Websites'];
         
-        const csvRows = history.map(item => {
+        const csvRows = filteredHistory.map(item => {
             const websites = Array.isArray(item.websites) ? item.websites.join('; ') : (item.websites || '');
             const time = new Date(item.log_timestamp).toLocaleString('vi-VN');
             const clientIp = item.client_ip || 'Local';
             // Bọc trong dấu ngoặc kép để tránh lỗi dấu phẩy trong chuỗi
-            return `${item.id},"${time}","${clientIp}","${item.packet_count}","${item.ai_prediction}","${websites}"`;
+            return `${item.id},"${time}","${clientIp}","${item.packet_count}","${formatPredictionLabel(item.ai_prediction)}","${websites}"`;
         });
         
         // Thêm BOM (\uFEFF) để Excel đọc tiếng Việt UTF-8 không bị lỗi font
@@ -70,7 +84,7 @@ export default function History() {
     // HÀM XUẤT FILE PDF SỬ DỤNG jspdf VÀ jspdf-autotable
     // ----------------------------------------------------
     const exportToPDF = () => {
-        if (history.length === 0) return alert("Không có dữ liệu để xuất!");
+        if (filteredHistory.length === 0) return alert("Không có dữ liệu để xuất!");
         
         const doc = new jsPDF();
         
@@ -83,14 +97,14 @@ export default function History() {
         const tableColumn = ["ID", "Time", "Client IP", "Packets", "AI Label", "Destination"];
         const tableRows = [];
         
-        history.forEach(log => {
+        filteredHistory.forEach(log => {
             const websites = Array.isArray(log.websites) ? log.websites.join(', ') : (log.websites || '');
             const logData = [
                 log.id, 
                 new Date(log.log_timestamp).toLocaleString('vi-VN'), 
                 log.client_ip || 'Local',
                 log.packet_count, 
-                log.ai_prediction, 
+                formatPredictionLabel(log.ai_prediction), 
                 websites
             ];
             tableRows.push(logData);
@@ -108,26 +122,12 @@ export default function History() {
         doc.save(`Network_Report_${new Date().getTime()}.pdf`);
     };
 
-    // Hàm lấy màu cho Badge dựa trên tên nhãn
-    const getBadgeStyle = (label) => {
-        const color = PREDICTION_COLORS[label] || PREDICTION_COLORS['Default'];
-        return {
-            color: color,
-            border: `1px solid ${color}`,
-            background: `${color}15`,
-            padding: '4px 10px',
-            borderRadius: '4px',
-            fontSize: '12px',
-            fontWeight: 'bold',
-            display: 'inline-block'
-        };
-    };
-
     // Xử lý logic phân trang
-    const totalPages = Math.ceil(history.length / itemsPerPage);
-    const indexOfLastItem = currentPage * itemsPerPage;
+    const totalPages = Math.max(1, Math.ceil(filteredHistory.length / itemsPerPage));
+    const safePage = Math.min(currentPage, totalPages);
+    const indexOfLastItem = safePage * itemsPerPage;
     const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-    const currentItems = history.slice(indexOfFirstItem, indexOfLastItem);
+    const currentItems = filteredHistory.slice(indexOfFirstItem, indexOfLastItem);
 
     return (
         <div style={{ padding: '24px', background: '#050b14', minHeight: '100vh', color: '#e2e8f0' }}>
@@ -165,10 +165,53 @@ export default function History() {
             </div>
 
             {/* Thanh công cụ (Bộ lọc) */}
-            <div style={{ background: '#0a0f1c', padding: '16px 20px', borderRadius: '12px 12px 0 0', border: '1px solid #1e293b', borderBottom: 'none', display: 'flex', alignItems: 'center' }}>
-                <button style={{ background: '#1e293b', color: '#cbd5e1', border: '1px solid #334155', padding: '8px 16px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
-                    <Filter size={14} /> Lọc theo nhãn
-                </button>
+            <div style={{ background: '#0a0f1c', padding: '16px 20px', borderRadius: '12px 12px 0 0', border: '1px solid #1e293b', borderBottom: 'none', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#0f172a', padding: '6px 12px', borderRadius: '6px', border: '1px solid #334155' }}>
+                    <Filter size={14} color="#0ea5e9" />
+                    <span style={{ fontSize: '12px', color: '#94a3b8' }}>Nhãn:</span>
+                    <select
+                        value={selectedLabel}
+                        onChange={(e) => { setSelectedLabel(e.target.value); setCurrentPage(1); }}
+                        style={{ background: '#1e293b', color: '#f8fafc', border: 'none', borderRadius: '4px', padding: '3px 8px', fontSize: '13px', outline: 'none', cursor: 'pointer' }}
+                    >
+                        {uniqueLabels.map(lbl => (
+                            <option key={lbl} value={lbl}>{lbl === 'ALL' ? 'Tất cả nhãn' : lbl}</option>
+                        ))}
+                    </select>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#0f172a', padding: '6px 12px', borderRadius: '6px', border: '1px solid #334155' }}>
+                    <span style={{ fontSize: '12px', color: '#94a3b8' }}>Thiết bị:</span>
+                    <select
+                        value={selectedIp}
+                        onChange={(e) => { setSelectedIp(e.target.value); setCurrentPage(1); }}
+                        style={{ background: '#1e293b', color: '#38bdf8', border: 'none', borderRadius: '4px', padding: '3px 8px', fontSize: '13px', outline: 'none', cursor: 'pointer', fontFamily: 'monospace' }}
+                    >
+                        {uniqueIps.map(ip => (
+                            <option key={ip} value={ip}>{ip === 'ALL' ? 'Tất cả thiết bị' : ip}</option>
+                        ))}
+                    </select>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#0f172a', padding: '6px 12px', borderRadius: '6px', border: '1px solid #334155', flex: '1', minWidth: '200px', maxWidth: '320px' }}>
+                    <Search size={14} color="#94a3b8" />
+                    <input
+                        type="text"
+                        placeholder="Tìm tên miền (youtube, zalo...)"
+                        value={searchText}
+                        onChange={(e) => { setSearchText(e.target.value); setCurrentPage(1); }}
+                        style={{ background: 'transparent', border: 'none', color: '#f8fafc', fontSize: '13px', outline: 'none', width: '100%' }}
+                    />
+                </div>
+
+                {(selectedLabel !== 'ALL' || selectedIp !== 'ALL' || searchText) && (
+                    <button
+                        onClick={() => { setSelectedLabel('ALL'); setSelectedIp('ALL'); setSearchText(''); setCurrentPage(1); }}
+                        style={{ background: '#1e293b', color: '#cbd5e1', border: '1px solid #334155', padding: '7px 12px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px' }}
+                    >
+                        <RotateCcw size={13} /> Đặt lại
+                    </button>
+                )}
             </div>
 
             {/* Bảng dữ liệu */}
@@ -217,7 +260,7 @@ export default function History() {
                                         <td style={{ padding: '14px 20px', color: '#f8fafc', fontWeight: 'bold' }}>{item.packet_count}</td>
                                         <td style={{ padding: '14px 20px' }}>
                                             <span style={getBadgeStyle(item.ai_prediction)}>
-                                                {item.ai_prediction}
+                                                {formatPredictionLabel(item.ai_prediction)}
                                             </span>
                                         </td>
                                         <td style={{ padding: '14px 20px', color: '#94a3b8' }}>
@@ -231,26 +274,26 @@ export default function History() {
                 )}
 
                 {/* Footer Phân trang */}
-                {!loading && history.length > 0 && (
+                {!loading && filteredHistory.length > 0 && (
                     <div style={{ padding: '16px 20px', borderTop: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', color: '#94a3b8' }}>
                         <div>
-                            Hiển thị {indexOfFirstItem + 1} - {Math.min(indexOfLastItem, history.length)} trong tổng số {history.length} bản ghi
+                            Hiển thị {indexOfFirstItem + 1} - {Math.min(indexOfLastItem, filteredHistory.length)} trong tổng số {filteredHistory.length} bản ghi
                         </div>
                         <div style={{ display: 'flex', gap: '8px' }}>
                             <button 
                                 onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                                disabled={currentPage === 1}
-                                style={{ background: '#1e293b', border: 'none', color: currentPage === 1 ? '#475569' : '#cbd5e1', padding: '6px 12px', borderRadius: '6px', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
+                                disabled={safePage === 1}
+                                style={{ background: '#1e293b', border: 'none', color: safePage === 1 ? '#475569' : '#cbd5e1', padding: '6px 12px', borderRadius: '6px', cursor: safePage === 1 ? 'not-allowed' : 'pointer' }}
                             >
                                 Trước
                             </button>
                             <span style={{ padding: '6px 12px', background: 'rgba(14, 165, 233, 0.1)', color: '#0ea5e9', borderRadius: '6px', fontWeight: 'bold' }}>
-                                Trang {currentPage} / {totalPages}
+                                Trang {safePage} / {totalPages}
                             </span>
                             <button 
                                 onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                                disabled={currentPage === totalPages}
-                                style={{ background: '#1e293b', border: 'none', color: currentPage === totalPages ? '#475569' : '#cbd5e1', padding: '6px 12px', borderRadius: '6px', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}
+                                disabled={safePage === totalPages}
+                                style={{ background: '#1e293b', border: 'none', color: safePage === totalPages ? '#475569' : '#cbd5e1', padding: '6px 12px', borderRadius: '6px', cursor: safePage === totalPages ? 'not-allowed' : 'pointer' }}
                             >
                                 Sau
                             </button>

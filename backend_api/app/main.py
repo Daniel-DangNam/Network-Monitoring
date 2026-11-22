@@ -50,10 +50,11 @@ app = FastAPI(
     description="Backend API giám sát & phân loại lưu lượng mạng thời gian thực sử dụng Online Machine Learning (ĐATN)"
 )
 
-# Cấu hình CORS đa môi trường
+# Cấu hình CORS đa môi trường (hỗ trợ truy cập qua IP LAN từ máy thật Windows)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
+    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"], 
     allow_headers=["*"], 
