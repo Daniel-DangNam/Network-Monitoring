@@ -129,6 +129,32 @@ def get_local_host_ips() -> set[str]:
             pass
     return local_ips
 
+def get_gateway_and_dns_ips() -> set[str]:
+    """Lấy IP của Default Gateway và DNS Server thượng nguồn (tránh nhận nhầm là thiết bị khách)."""
+    infra_ips = set()
+    if sys.platform != "win32":
+        try:
+            import subprocess
+            out = subprocess.check_output(["ip", "route", "show", "default"], text=True, timeout=2)
+            parts = out.strip().split()
+            for idx, tok in enumerate(parts):
+                if tok == "via" and idx + 1 < len(parts):
+                    infra_ips.add(parts[idx + 1].strip())
+        except Exception:
+            pass
+        try:
+            if os.path.exists("/etc/resolv.conf"):
+                with open("/etc/resolv.conf", "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("nameserver"):
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                infra_ips.add(parts[1].strip())
+        except Exception:
+            pass
+    return infra_ips
+
 def _is_ignored_ip(ip_str: str) -> bool:
     try:
         ip_obj = ipaddress.ip_address(ip_str)
@@ -148,10 +174,10 @@ def _is_private_ip(ip_str: str) -> bool:
     except ValueError:
         return False
 
-def identify_client_ip(pkt, local_ips: set[str]) -> str | None:
+def identify_client_ip(pkt, local_ips: set[str], gateway_ips: set[str] | None = None) -> str | None:
     """
     Xác định IP của thiết bị đầu cuối (Client Device) trong mạng Wi-Fi / LAN.
-    Ưu tiên IP nội bộ của máy khác kết nối qua Hotspot/Module Wi-Fi.
+    Bỏ qua IP của Gateway/DNS thượng nguồn (ví dụ 192.168.142.2 của VMware NAT).
     """
     if not pkt.haslayer(IP):
         return None
@@ -161,21 +187,23 @@ def identify_client_ip(pkt, local_ips: set[str]) -> str | None:
     if _is_ignored_ip(src_ip) or _is_ignored_ip(dst_ip):
         return None
 
+    infra = gateway_ips or set()
+
     # 1. Thiết bị khách (Điện thoại/Laptop khác) kết nối qua Wi-Fi Hotspot
-    if _is_private_ip(src_ip) and src_ip not in local_ips:
+    if _is_private_ip(src_ip) and src_ip not in local_ips and src_ip not in infra:
         return src_ip
-    if _is_private_ip(dst_ip) and dst_ip not in local_ips:
+    if _is_private_ip(dst_ip) and dst_ip not in local_ips and dst_ip not in infra:
         return dst_ip
 
-    # 2. Lưu lượng của chính máy trạm/VM hiện tại
+    # 2. Lưu lượng của chính máy trạm/VM hiện tại (bao gồm gói DNS/Gateway gửi tới infra)
     if src_ip in local_ips:
         return src_ip
     if dst_ip in local_ips:
         return dst_ip
 
-    if _is_private_ip(src_ip):
+    if _is_private_ip(src_ip) and src_ip not in infra:
         return src_ip
-    if _is_private_ip(dst_ip):
+    if _is_private_ip(dst_ip) and dst_ip not in infra:
         return dst_ip
     return None
 
@@ -240,6 +268,7 @@ def _run_cicflowmeter(pcap_path: str, csv_out_path: str) -> bool:
 def process_data_loop(model):
     global is_running, last_domain_by_client
     local_ips = get_local_host_ips()
+    gateway_ips = get_gateway_and_dns_ips()
 
     while is_running:
         try:
@@ -252,7 +281,7 @@ def process_data_loop(model):
                 client_buckets = defaultdict(list)
                 with PcapReader(abs_pcap) as pcap_reader:
                     for pkt in pcap_reader:
-                        c_ip = identify_client_ip(pkt, local_ips)
+                        c_ip = identify_client_ip(pkt, local_ips, gateway_ips)
                         if c_ip:
                             client_buckets[c_ip].append(pkt)
 
